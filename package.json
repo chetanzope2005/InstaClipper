@@ -1,0 +1,25 @@
+{
+  "name": "instaclipper",
+  "version": "1.0.0",
+  "description": "InstaClipper - All-In-One Instagram Utility Suite (Zero Storage)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "instagram",
+    "scraper",
+    "comments",
+    "zero-storage"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.7.0"
+  }
+}
