@@ -79,12 +79,14 @@ function isAllowedCdnDomain(targetUrl) {
       return false;
     }
 
-    // Allowed Instagram & Meta CDN Domains
+    // Allowed Instagram & Meta CDN Domains + Giphy CDN
     const allowedDomains = [
       'cdninstagram.com',
       'instagram.com',
       'fbcdn.net',
-      'facebook.com'
+      'facebook.com',
+      'giphy.com',
+      'giphy.media'
     ];
 
     return allowedDomains.some(domain => hostname === domain || hostname.endsWith('.' + domain));
@@ -130,21 +132,111 @@ function getCleanPostUrl(shortcode) {
   return `https://www.instagram.com/reel/${shortcode}/`;
 }
 
+/**
+ * Comprehensive GIF Media Extractor for Instagram Comments
+ */
+function extractGifUrlFromItem(item) {
+  if (!item || typeof item !== 'object') return '';
+
+  // 1. Direct properties
+  if (item.gifUrl && typeof item.gifUrl === 'string') return item.gifUrl;
+  if (item.gif_url && typeof item.gif_url === 'string') return item.gif_url;
+  if (item.giphy_url && typeof item.giphy_url === 'string') return item.giphy_url;
+  if (item.giphy_media_url && typeof item.giphy_media_url === 'string') return item.giphy_media_url;
+
+  // 2. Check giphy_media_info and common sub-objects
+  const mediaContainers = [
+    item.giphy_media_info,
+    item.giphy_media,
+    item.animated_media,
+    item.custom_media,
+    item.comment_media?.giphy_media_info,
+    item.comment_media,
+    item.comment_index_media,
+    item.media?.giphy_media_info,
+    item.media,
+    item.media_info
+  ];
+
+  for (const container of mediaContainers) {
+    if (!container || typeof container !== 'object') continue;
+
+    // Check images inside container
+    const images = container.images || container.media_info?.images;
+    if (images) {
+      if (images.original?.url) return images.original.url;
+      if (images.fixed_height?.url) return images.fixed_height.url;
+      if (images.fixed_width?.url) return images.fixed_width.url;
+      if (images.downsized?.url) return images.downsized.url;
+      if (images.downsized_large?.url) return images.downsized_large.url;
+      if (images.downsized_medium?.url) return images.downsized_medium.url;
+    }
+
+    // Check direct url/gif_url/embed_url
+    if (container.gif_url) return container.gif_url;
+    if (container.url && (container.url.includes('.gif') || container.url.includes('giphy') || container.url.includes('cdninstagram'))) return container.url;
+    if (container.embed_url) return container.embed_url;
+
+    // Check image_versions2
+    if (container.image_versions2?.candidates?.[0]?.url) {
+      return container.image_versions2.candidates[0].url;
+    }
+
+    // Check Giphy ID
+    const gId = container.id || container.giphy_id || container.media_id;
+    if (gId && typeof gId === 'string' && /^[a-zA-Z0-9_-]+$/.test(gId) && gId.length > 5) {
+      return `https://media.giphy.com/media/${gId}/giphy.gif`;
+    }
+  }
+
+  // 3. Text regex check: Does item.text contain a Giphy link or .gif link?
+  if (typeof item.text === 'string') {
+    const giphyMatch = item.text.match(/https?:\/\/(?:media\d*|i|giphy)\.giphy\.com\/[^\s"'>]+\.gif/i) ||
+                       item.text.match(/https?:\/\/(?:giphy\.com|media\.giphy\.com)\/gifs\/[^\s"'>]+/i) ||
+                       item.text.match(/https?:\/\/[^\s"'>]+\.gif(?:\?[^\s"'>]*)?/i);
+    if (giphyMatch) {
+      return giphyMatch[0];
+    }
+  }
+
+  // 4. Fallback: Deep JSON string match for any Giphy GIF URL or .gif URL
+  try {
+    const jsonStr = JSON.stringify(item);
+    const gifMatch = jsonStr.match(/https?:\\?\/\\?\/media\d*\.giphy\.com\\?\/media\\?\/[a-zA-Z0-9_-]+\\?\/(?:giphy|200|fixed_height|original)\.gif/i) ||
+                     jsonStr.match(/https?:\\?\/\\?\/[^\s"'\\]+\.gif(?:\?[^\s"'\\]*)?/i);
+    if (gifMatch) {
+      return gifMatch[0].replace(/\\\//g, '/');
+    }
+  } catch (e) {}
+
+  return '';
+}
+
 function formatSingleComment(item) {
+  const gifUrl = extractGifUrlFromItem(item);
+  let rawText = (item.text || '').trim();
+
+  // Clean up raw text if it's Instagram's placeholder string for pure GIF comments (e.g. '"" >', '""', '""&gt;')
+  if (/^""\s*>?$/i.test(rawText) || /^""\s*&gt;?$/i.test(rawText) || rawText === '""') {
+    rawText = '';
+  }
+
   return {
     id: item.pk || item.id,
-    text: item.text || '',
+    text: rawText,
     username: item.user?.username || 'unknown',
     fullName: item.user?.full_name || '',
     profilePic: item.user?.profile_pic_url || '',
     isVerified: Boolean(item.user?.is_verified),
+    isPinned: Boolean(item.is_pinned || item.pinned || item.pinned_comment_info),
+    gifUrl: gifUrl,
     createdAt: item.created_at || Math.floor(Date.now() / 1000),
     createdAtFormatted: item.created_at
-      ? new Date(item.created_at * 1000).toLocaleString('hi-IN', {
+      ? new Date(item.created_at * 1000).toLocaleString('en-US', {
           dateStyle: 'medium',
           timeStyle: 'short'
         })
-      : new Date().toLocaleString(),
+      : new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
     likesCount: item.comment_like_count || 0
   };
 }
@@ -334,7 +426,7 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
   let maxId = '';
   let hasMore = true;
   let pageCount = 0;
-  const maxPages = 150;
+  const maxPages = 300;
   let instagramTotalCount = 0;
 
   try {
@@ -347,7 +439,7 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
         url += `&max_id=${encodeURIComponent(maxId)}`;
       }
 
-      const response = await axios.get(url, { headers, timeout: 12000, maxRedirects: 0, validateStatus: s => s < 500 });
+      const response = await axios.get(url, { headers, timeout: 15000, maxRedirects: 0, validateStatus: s => s < 500 });
 
       if (response.status === 401 || response.status === 403) {
         return res.status(401).json({ error: 'Session ID is invalid or expired.' });
@@ -383,12 +475,13 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
         const replyMap = new Map();
         initialReplies.forEach(r => replyMap.set(String(r.id), r));
 
+        // Fetch child comment replies if more exist
         if (item.child_comment_count > replyMap.size) {
           let childHasMore = true;
           let childMinId = '';
           let childPage = 0;
 
-          while (childHasMore && childPage < 10) {
+          while (childHasMore && childPage < 3) {
             childPage++;
             try {
               let childUrl = `https://www.instagram.com/api/v1/media/${mediaId}/comments/${item.pk}/child_comments/`;
@@ -418,7 +511,7 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
       hasMore = Boolean(data.has_more_comments || data.has_more_headload_comments) && Boolean(minId || maxId);
 
       if (hasMore) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
 
@@ -452,6 +545,139 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
     }
 
     return res.status(500).json({ error: `Server Error: ${err.message}` });
+  }
+});
+
+/**
+ * REAL-TIME STREAMING COMMENT SCRAPER (Server-Sent Events)
+ * Streams comment pages live to the client as they arrive in background
+ */
+app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
+  const { postUrl, sessionId } = req.query;
+
+  if (!postUrl || !sessionId) {
+    return res.status(400).json({ error: 'Post URL and Session ID are required.' });
+  }
+
+  const shortcode = parseShortcode(postUrl);
+  if (!shortcode) {
+    return res.status(400).json({ error: 'Invalid Instagram URL format.' });
+  }
+
+  let mediaId;
+  try {
+    mediaId = shortcodeToMediaId(shortcode);
+  } catch (err) {
+    return res.status(400).json({ error: `Shortcode conversion error: ${err.message}` });
+  }
+
+  // Set SSE Headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+
+  const headers = getInstagramHeaders(sessionId);
+  let minId = '';
+  let maxId = '';
+  let hasMore = true;
+  let pageCount = 0;
+  const maxPages = 300;
+  let totalCommentsSent = 0;
+
+  try {
+    while (hasMore && pageCount < maxPages) {
+      pageCount++;
+      let url = `https://www.instagram.com/api/v1/media/${mediaId}/comments/?can_support_threading=true`;
+      if (minId) {
+        url += `&min_id=${encodeURIComponent(minId)}`;
+      } else if (maxId) {
+        url += `&max_id=${encodeURIComponent(maxId)}`;
+      }
+
+      const response = await axios.get(url, { headers, timeout: 12000, maxRedirects: 0, validateStatus: s => s < 500 });
+
+      if (response.status === 401 || response.status === 403) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Session ID is invalid or expired.' })}\n\n`);
+        return res.end();
+      }
+
+      if (response.status === 404) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Post not found or is private.' })}\n\n`);
+        return res.end();
+      }
+
+      const data = response.data;
+      if (!data || data.status !== 'ok') {
+        break;
+      }
+
+      const rawComments = data.comments || [];
+      if (rawComments.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      const pageComments = [];
+      for (const item of rawComments) {
+        const commentObj = formatSingleComment(item);
+        commentObj.childCommentCount = item.child_comment_count || 0;
+        
+        const initialReplies = (item.preview_child_comments || item.child_comments || []).map(formatSingleComment);
+        const replyMap = new Map();
+        initialReplies.forEach(r => replyMap.set(String(r.id), r));
+
+        if (item.child_comment_count > replyMap.size) {
+          let childHasMore = true;
+          let childMinId = '';
+          let childPage = 0;
+
+          while (childHasMore && childPage < 2) {
+            childPage++;
+            try {
+              let childUrl = `https://www.instagram.com/api/v1/media/${mediaId}/comments/${item.pk}/child_comments/`;
+              if (childMinId) childUrl += `?min_id=${encodeURIComponent(childMinId)}`;
+
+              const childRes = await axios.get(childUrl, { headers, timeout: 5000, maxRedirects: 0, validateStatus: () => true });
+              if (childRes.data && childRes.data.child_comments) {
+                const fetchedChilds = childRes.data.child_comments.map(formatSingleComment);
+                fetchedChilds.forEach(r => replyMap.set(String(r.id), r));
+                childMinId = childRes.data.next_min_id || childRes.data.next_max_id || '';
+                childHasMore = Boolean(childRes.data.has_more_comments || childRes.data.has_more_headload_comments) && Boolean(childMinId);
+              } else {
+                childHasMore = false;
+              }
+            } catch (e) {
+              childHasMore = false;
+            }
+          }
+        }
+
+        commentObj.replies = Array.from(replyMap.values());
+        pageComments.push(commentObj);
+      }
+
+      let instagramTotalCount = data.comment_count || 0;
+
+      // Send live batch to client
+      res.write(`data: ${JSON.stringify({ type: 'batch', comments: pageComments, shortcode, mediaId, totalCommentsSent, instagramTotalCount })}\n\n`);
+
+      minId = data.next_min_id || data.next_max_id || '';
+      maxId = data.next_max_id || '';
+      hasMore = Boolean(data.has_more_comments || data.has_more_headload_comments) && Boolean(minId || maxId);
+
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'done', totalCommentsSent })}\n\n`);
+    res.end();
+
+  } catch (err) {
+    res.write(`data: ${JSON.stringify({ type: 'done', warning: err.message, totalCommentsSent })}\n\n`);
+    res.end();
   }
 });
 

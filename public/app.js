@@ -293,37 +293,134 @@ document.addEventListener('DOMContentLoaded', () => {
 
     errorCardScraper.classList.add('hidden');
     resultsScraper.classList.add('hidden');
-    statusCardScraper.classList.remove('hidden');
     btnSubmitScraper.disabled = true;
     spinnerScraper.classList.remove('hidden');
 
+    allComments = [];
+    renderedIndex = 0;
+    commentsContainer.innerHTML = '';
+
+    const noticeBanner = document.getElementById('comment-notice-banner');
+    const noticeIcon = document.getElementById('notice-icon');
+    const noticeTitle = document.getElementById('notice-status-title');
+    const noticeDesc = document.getElementById('notice-status-desc');
+
+    if (noticeBanner) {
+      noticeBanner.className = 'comment-notice-banner';
+      if (noticeIcon) noticeIcon.textContent = '⏳';
+      if (noticeTitle) noticeTitle.textContent = 'Pro Tip:';
+      if (noticeDesc) noticeDesc.textContent = 'For 100% complete and exact comment extraction, please wait until all background comments finish loading.';
+    }
+
+    let streamCompleted = false;
+    let streamError = null;
+    let instagramTotal = 0;
+
+    // Create Stream Promise with SSE (Server-Sent Events)
+    const apiPromise = new Promise((resolve, reject) => {
+      const sseUrl = `/api/scrape-comments-stream?postUrl=${encodeURIComponent(postUrl)}&sessionId=${encodeURIComponent(sessionId)}`;
+      const evtSource = new EventSource(sseUrl);
+
+      evtSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'error') {
+            evtSource.close();
+            streamError = new Error(data.error || 'Failed to stream comments.');
+            reject(streamError);
+            return;
+          }
+
+          if (data.type === 'batch') {
+            if (data.shortcode) activeShortcode = data.shortcode;
+            if (data.instagramTotalCount) instagramTotal = data.instagramTotalCount;
+            const newComments = data.comments || [];
+            allComments.push(...newComments);
+
+            const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
+            const combined = allComments.length + repliesCount;
+
+            // Update live count badge inside modal if modal is open
+            if (scraperAdCount) {
+              scraperAdCount.textContent = `${combined.toLocaleString()} Comments Loaded So Far`;
+            }
+
+            // Update toolbar badge on results section
+            const liveTotalBadge = document.getElementById('live-total-badge');
+            if (liveTotalBadge) {
+              if (instagramTotal > 0) {
+                liveTotalBadge.textContent = `💬 Extracted ${combined.toLocaleString()} / ${instagramTotal.toLocaleString()} Total Comments`;
+              } else {
+                liveTotalBadge.textContent = `💬 Extracted ${combined.toLocaleString()} Comments (Streaming...)`;
+              }
+            }
+
+            // If results section is already visible, update feed live!
+            if (!resultsScraper.classList.contains('hidden')) {
+              applyFilterAndSort();
+            }
+          }
+
+          if (data.type === 'done') {
+            evtSource.close();
+            streamCompleted = true;
+            const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
+            const combined = allComments.length + repliesCount;
+            const liveTotalBadge = document.getElementById('live-total-badge');
+            if (liveTotalBadge) {
+              liveTotalBadge.textContent = `✅ Extracted ${combined.toLocaleString()} Total Comments`;
+            }
+            if (noticeBanner) {
+              noticeBanner.className = 'comment-notice-banner notice-complete';
+              if (noticeIcon) noticeIcon.textContent = '✅';
+              if (noticeTitle) noticeTitle.textContent = 'Extraction Complete:';
+              if (noticeDesc) noticeDesc.textContent = 'All comments and nested replies have been 100% extracted successfully!';
+            }
+            resolve({ comments: allComments, shortcode: activeShortcode });
+          }
+        } catch (err) {
+          evtSource.close();
+          reject(err);
+        }
+      };
+
+      evtSource.onerror = (err) => {
+        evtSource.close();
+        if (allComments.length > 0) {
+          resolve({ comments: allComments, shortcode: activeShortcode });
+        } else {
+          reject(new Error('Connection lost while fetching comments. Please check Session ID.'));
+        }
+      };
+    });
+
     try {
-      const response = await fetch('/api/scrape-comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postUrl, sessionId })
-      });
+      // Run 30-Second Compulsory Video Ad Modal
+      startCompulsoryScraperAdTimer();
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to scrape comments.');
+      // Wait 30 seconds for compulsory ad timer
+      await new Promise(r => setTimeout(r, 30000));
+
+      // HIDE MODAL AT EXACTLY 30 SECONDS GUARANTEED!
+      if (scraperAdModal) scraperAdModal.classList.add('hidden');
+
+      if (allComments.length === 0) {
+        // If stream hasn't received comments yet, wait briefly for first batch
+        await apiPromise;
       }
-
-      statusCardScraper.classList.add('hidden');
-      allComments = data.comments || [];
-      activeShortcode = data.shortcode || 'post';
 
       if (allComments.length === 0) {
         throw new Error('No comments found on this post.');
       }
 
+      // SHOW RESULTS IMMEDIATELY AFTER 30s AD
       resultsScraper.classList.remove('hidden');
       searchInput.value = '';
-      sortSelect.value = 'newest';
+      sortSelect.value = 'likes';
       applyFilterAndSort();
 
     } catch (err) {
-      statusCardScraper.classList.add('hidden');
       errorMsgScraper.textContent = err.message;
       errorCardScraper.classList.remove('hidden');
     } finally {
@@ -345,15 +442,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   sortSelect.addEventListener('change', applyFilterAndSort);
 
-  /* EXPORT ALL COMMENTS & REPLIES TO CSV */
+  /* EXPORT ALL COMMENTS & REPLIES TO CSV (Compulsory 15s Ad) */
   btnExportCsv.addEventListener('click', () => {
     if (!filteredComments || filteredComments.length === 0) {
       return alert('No comments available to export.');
     }
 
-    triggerDownloadWithAd(() => {
+    triggerCsvExportWithAd(() => {
       const csvRows = [];
-      csvRows.push(['Comment ID', 'Type', 'Username', 'Full Name', 'Comment Text', 'Likes Count', 'Timestamp', 'Is Verified']);
+      csvRows.push(['Comment ID', 'Type', 'Username', 'Full Name', 'Comment Text', 'Likes Count', 'Timestamp', 'Is Verified', 'Is Pinned', 'GIF URL']);
 
       filteredComments.forEach(parent => {
         // Add Main Comment
@@ -365,7 +462,9 @@ document.addEventListener('DOMContentLoaded', () => {
           parent.text,
           parent.likesCount,
           parent.createdAtFormatted,
-          parent.isVerified ? 'Yes' : 'No'
+          parent.isVerified ? 'Yes' : 'No',
+          parent.isPinned ? 'Yes' : 'No',
+          parent.gifUrl || ''
         ]);
 
         // Add Child Replies
@@ -379,7 +478,9 @@ document.addEventListener('DOMContentLoaded', () => {
               reply.text,
               reply.likesCount,
               reply.createdAtFormatted,
-              reply.isVerified ? 'Yes' : 'No'
+              reply.isVerified ? 'Yes' : 'No',
+              reply.isPinned ? 'Yes' : 'No',
+              reply.gifUrl || ''
             ]);
           });
         }
@@ -409,13 +510,13 @@ document.addEventListener('DOMContentLoaded', () => {
       filteredComments = [...allComments];
     } else {
       filteredComments = allComments.filter(c => {
-        const u = c.username.toLowerCase();
-        const f = c.fullName.toLowerCase();
-        const t = c.text.toLowerCase();
+        const u = (c.username || '').toLowerCase();
+        const f = (c.fullName || '').toLowerCase();
+        const t = (c.text || '').toLowerCase();
         const replyMatch = c.replies && c.replies.some(r =>
-          r.username.toLowerCase().includes(query) ||
-          r.fullName.toLowerCase().includes(query) ||
-          r.text.toLowerCase().includes(query)
+          (r.username || '').toLowerCase().includes(query) ||
+          (r.fullName || '').toLowerCase().includes(query) ||
+          (r.text || '').toLowerCase().includes(query)
         );
         return u.includes(query) || f.includes(query) || t.includes(query) || replyMatch;
       });
@@ -425,6 +526,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sortVal === 'newest') filteredComments.sort((a, b) => b.createdAt - a.createdAt);
     else if (sortVal === 'oldest') filteredComments.sort((a, b) => a.createdAt - b.createdAt);
     else if (sortVal === 'likes') filteredComments.sort((a, b) => b.likesCount - a.likesCount);
+
+    // ALWAYS PIN PINNED COMMENTS AT THE VERY TOP OF THE LIST!
+    filteredComments.sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
 
     commentsContainer.innerHTML = '';
     renderedIndex = 0;
@@ -546,8 +650,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const defaultAvatar = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="%238e99ac"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`;
     const avatarSrc = comment.profilePic || defaultAvatar;
 
+    let parentGifHtml = '';
+    if (comment.gifUrl) {
+      const isVideo = /\.mp4|\.webm/i.test(comment.gifUrl);
+      if (isVideo) {
+        parentGifHtml = `<div class="comment-gif-box"><video src="${comment.gifUrl}" class="comment-gif-img" autoplay loop muted playsinline controls></video></div>`;
+      } else {
+        parentGifHtml = `<div class="comment-gif-box"><img src="${comment.gifUrl}" class="comment-gif-img" alt="GIF" loading="lazy"></div>`;
+      }
+    }
+
+    const hasParentText = comment.text && comment.text.trim().length > 0;
     const parentCard = document.createElement('div');
-    parentCard.className = 'comment-card';
+    parentCard.className = `comment-card ${comment.isPinned ? 'pinned-card' : ''}`;
     parentCard.innerHTML = `
       <div class="avatar-container">
         <img class="avatar-img" src="${avatarSrc}" alt="${comment.username}" loading="lazy" onerror="this.src='${defaultAvatar}'">
@@ -555,28 +670,50 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="comment-content">
         <div class="comment-meta">
           <div class="user-details">
+            ${comment.isPinned ? '<span class="pinned-badge">📌 PINNED</span>' : ''}
             <a href="https://instagram.com/${comment.username}" target="_blank" rel="noopener" class="username">@${highlightText(comment.username, searchQuery)}</a>
             ${comment.isVerified ? '<span class="verified-icon">☑️</span>' : ''}
             ${comment.fullName ? `<span class="fullname">${highlightText(comment.fullName, searchQuery)}</span>` : ''}
           </div>
           <span class="timestamp">${comment.createdAtFormatted}</span>
         </div>
-        <div class="comment-text">${highlightText(comment.text, searchQuery)}</div>
+        ${hasParentText ? `<div class="comment-text">${highlightText(comment.text, searchQuery)}</div>` : ''}
+        ${parentGifHtml}
         <div class="comment-stats">
           <div class="stats-left">
             ${comment.likesCount > 0 ? `<span class="like-badge">❤️ ${comment.likesCount.toLocaleString()} likes</span>` : ''}
             ${comment.replies && comment.replies.length > 0 ? `<span>💬 ${comment.replies.length} replies</span>` : ''}
           </div>
-          <button type="button" class="btn-copy-card" title="Copy text">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            <span>Copy</span>
-          </button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            ${comment.gifUrl ? `
+              <a href="/api/download-stream?url=${encodeURIComponent(comment.gifUrl)}&filename=instaclipper_gif_${comment.id}.gif&type=image" class="btn-download-gif" title="Download GIF">
+                🎬 Download GIF
+              </a>
+            ` : ''}
+            <button type="button" class="btn-copy-card" title="Copy text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <span>Copy</span>
+            </button>
+          </div>
         </div>
       </div>
     `;
 
     const copyBtn = parentCard.querySelector('.btn-copy-card');
-    copyBtn.addEventListener('click', () => copyCommentToClipboard(comment.username, comment.text, copyBtn));
+    copyBtn.addEventListener('click', () => copyCommentToClipboard(comment.username, comment.text || '[GIF]', copyBtn));
+
+    const pGifBtn = parentCard.querySelector('.btn-download-gif');
+    if (pGifBtn) {
+      pGifBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const href = pGifBtn.getAttribute('href');
+        if (!href) return;
+        triggerDownloadWithAd(() => {
+          window.location.href = href;
+        });
+      });
+    }
+
     wrapper.appendChild(parentCard);
 
     if (comment.replies && comment.replies.length > 0) {
@@ -584,6 +721,17 @@ document.addEventListener('DOMContentLoaded', () => {
       repliesContainer.className = 'replies-container';
 
       comment.replies.forEach(reply => {
+        let replyGifHtml = '';
+        if (reply.gifUrl) {
+          const isReplyVideo = /\.mp4|\.webm/i.test(reply.gifUrl);
+          if (isReplyVideo) {
+            replyGifHtml = `<div class="comment-gif-box"><video src="${reply.gifUrl}" class="comment-gif-img" autoplay loop muted playsinline controls></video></div>`;
+          } else {
+            replyGifHtml = `<div class="comment-gif-box"><img src="${reply.gifUrl}" class="comment-gif-img" alt="GIF" loading="lazy"></div>`;
+          }
+        }
+
+        const hasReplyText = reply.text && reply.text.trim().length > 0;
         const replyCard = document.createElement('div');
         replyCard.className = 'reply-card';
         replyCard.innerHTML = `
@@ -593,25 +741,47 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="comment-content">
             <div class="comment-meta">
               <div class="user-details">
+                ${reply.isPinned ? '<span class="pinned-badge">📌 PINNED</span>' : ''}
                 <a href="https://instagram.com/${reply.username}" target="_blank" rel="noopener" class="username">@${highlightText(reply.username, searchQuery)}</a>
                 ${reply.fullName ? `<span class="fullname">${highlightText(reply.fullName, searchQuery)}</span>` : ''}
               </div>
               <span class="timestamp">${reply.createdAtFormatted}</span>
             </div>
-            <div class="comment-text">${highlightText(reply.text, searchQuery)}</div>
+            ${hasReplyText ? `<div class="comment-text">${highlightText(reply.text, searchQuery)}</div>` : ''}
+            ${replyGifHtml}
             <div class="comment-stats">
               <div class="stats-left">
                 ${reply.likesCount > 0 ? `<span class="like-badge">❤️ ${reply.likesCount.toLocaleString()} likes</span>` : ''}
               </div>
-              <button type="button" class="btn-copy-card" title="Copy text">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                <span>Copy</span>
-              </button>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                ${reply.gifUrl ? `
+                  <a href="/api/download-stream?url=${encodeURIComponent(reply.gifUrl)}&filename=instaclipper_gif_${reply.id}.gif&type=image" class="btn-download-gif" title="Download GIF">
+                    🎬 Download GIF
+                  </a>
+                ` : ''}
+                <button type="button" class="btn-copy-card" title="Copy text">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <span>Copy</span>
+                </button>
+              </div>
             </div>
           </div>
         `;
         const rCopyBtn = replyCard.querySelector('.btn-copy-card');
         rCopyBtn.addEventListener('click', () => copyCommentToClipboard(reply.username, reply.text, rCopyBtn));
+
+        const rGifBtn = replyCard.querySelector('.btn-download-gif');
+        if (rGifBtn) {
+          rGifBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const href = rGifBtn.getAttribute('href');
+            if (!href) return;
+            triggerDownloadWithAd(() => {
+              window.location.href = href;
+            });
+          });
+        }
+
         repliesContainer.appendChild(replyCard);
       });
 
@@ -663,14 +833,16 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.error || 'Failed to fetch video.');
       }
 
-      videoPlayer.src = data.videoUrl;
+      const filename = `instaclipper_video_${data.shortcode}.mp4`;
+      const streamUrl = `/api/download-stream?url=${encodeURIComponent(data.videoUrl)}&filename=${encodeURIComponent(filename)}&type=video`;
+      
+      videoPlayer.src = streamUrl;
       if (data.thumbnail) videoPlayer.poster = data.thumbnail;
       videoUsername.textContent = `@${data.username}`;
       videoResolution.textContent = `HD ${data.width}x${data.height}`;
       videoCaption.textContent = data.caption || 'No caption available.';
 
-      const filename = `instaclipper_video_${data.shortcode}.mp4`;
-      btnDownloadMp4.href = `/api/download-stream?url=${encodeURIComponent(data.videoUrl)}&filename=${encodeURIComponent(filename)}&type=video`;
+      btnDownloadMp4.href = streamUrl;
 
       resultsVideo.classList.remove('hidden');
       resultsVideo.scrollIntoView({ behavior: 'smooth' });
@@ -712,13 +884,15 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.error || 'Failed to fetch audio track.');
       }
 
-      audioPlayer.src = data.audioUrl;
+      const filename = `instaclipper_song_${data.shortcode}.mp3`;
+      const audioStreamUrl = `/api/download-stream?url=${encodeURIComponent(data.audioUrl)}&filename=${encodeURIComponent(filename)}&type=audio`;
+
+      audioPlayer.src = audioStreamUrl;
       songTitle.textContent = data.title || 'Original Audio';
       songArtist.textContent = `@${data.artist}`;
       songArtwork.src = data.artwork || 'https://via.placeholder.com/160?text=Music';
 
-      const filename = `instaclipper_song_${data.shortcode}.mp3`;
-      btnDownloadMp3.href = `/api/download-stream?url=${encodeURIComponent(data.audioUrl)}&filename=${encodeURIComponent(filename)}&type=audio`;
+      btnDownloadMp3.href = audioStreamUrl;
 
       resultsSong.classList.remove('hidden');
       resultsSong.scrollIntoView({ behavior: 'smooth' });
@@ -733,29 +907,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   /* ==========================================
-     INTERSTITIAL AD MODAL FOR DOWNLOADS (5s Timer + User Controls)
+     1. INTERSTITIAL AD MODAL FOR DOWNLOADS (5s Wait + User Controls)
      ========================================== */
   const downloadAdModal = document.getElementById('download-ad-modal');
   const adCountdownSec = document.getElementById('ad-countdown-sec');
   const btnCloseDownloadAd = document.getElementById('btn-close-download-ad');
   const btnSkipDownloadAd = document.getElementById('btn-skip-download-ad');
+  const skipBtnLabel = document.getElementById('skip-btn-label');
 
   let pendingDownloadAction = null;
   let adTimerInterval = null;
+  let isSkipEnabled = false;
 
   function triggerDownloadWithAd(actionCallback) {
     pendingDownloadAction = actionCallback;
-    let secondsLeft = 5;
-    if (adCountdownSec) adCountdownSec.textContent = secondsLeft;
+    let waitSeconds = 5;
+    let autoCloseSeconds = 30;
+    isSkipEnabled = false;
+
+    if (adCountdownSec) adCountdownSec.textContent = autoCloseSeconds;
+    if (skipBtnLabel) skipBtnLabel.textContent = `Skip Ad in ${waitSeconds}s...`;
+    if (btnSkipDownloadAd) btnSkipDownloadAd.disabled = true;
+    if (btnCloseDownloadAd) btnCloseDownloadAd.classList.add('hidden');
+
     if (downloadAdModal) downloadAdModal.classList.remove('hidden');
 
     if (adTimerInterval) clearInterval(adTimerInterval);
 
     adTimerInterval = setInterval(() => {
-      secondsLeft--;
-      if (adCountdownSec) adCountdownSec.textContent = secondsLeft;
+      waitSeconds--;
+      autoCloseSeconds--;
 
-      if (secondsLeft <= 0) {
+      if (adCountdownSec) adCountdownSec.textContent = Math.max(0, autoCloseSeconds);
+
+      if (waitSeconds > 0) {
+        if (skipBtnLabel) skipBtnLabel.textContent = `Skip Ad in ${waitSeconds}s...`;
+      } else if (!isSkipEnabled) {
+        isSkipEnabled = true;
+        if (btnSkipDownloadAd) btnSkipDownloadAd.disabled = false;
+        if (skipBtnLabel) skipBtnLabel.textContent = `Skip Ad & Download File Now ⚡`;
+        if (btnCloseDownloadAd) btnCloseDownloadAd.classList.remove('hidden');
+      }
+
+      if (autoCloseSeconds <= 0) {
         finishAndExecuteDownload();
       }
     }, 1000);
@@ -775,12 +969,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  if (btnCloseDownloadAd) btnCloseDownloadAd.addEventListener('click', finishAndExecuteDownload);
-  if (btnSkipDownloadAd) btnSkipDownloadAd.addEventListener('click', finishAndExecuteDownload);
+  if (btnCloseDownloadAd) {
+    btnCloseDownloadAd.addEventListener('click', () => {
+      if (isSkipEnabled) finishAndExecuteDownload();
+    });
+  }
+
+  if (btnSkipDownloadAd) {
+    btnSkipDownloadAd.addEventListener('click', () => {
+      if (isSkipEnabled) finishAndExecuteDownload();
+    });
+  }
 
   if (downloadAdModal) {
     downloadAdModal.addEventListener('click', (e) => {
-      if (e.target === downloadAdModal) {
+      if (e.target === downloadAdModal && isSkipEnabled) {
         finishAndExecuteDownload();
       }
     });
@@ -804,6 +1007,85 @@ document.addEventListener('DOMContentLoaded', () => {
       window.location.href = href;
     });
   });
+
+  /* ==========================================
+     2. MANDATORY 30-SECOND SCRAPER AD & LIVE COUNTER MODAL
+     ========================================== */
+  const scraperAdModal = document.getElementById('scraper-ad-modal');
+  const scraperAdSec = document.getElementById('scraper-ad-sec');
+  const scraperAdProgressFill = document.getElementById('scraper-ad-progress-fill');
+  const scraperAdCount = document.getElementById('scraper-ad-count');
+  const scraperAdStatusMsg = document.getElementById('scraper-ad-status-msg');
+
+  function startCompulsoryScraperAdTimer() {
+    if (!scraperAdModal) return;
+
+    let secondsPassed = 0;
+    const totalSeconds = 30;
+
+    if (scraperAdSec) scraperAdSec.textContent = totalSeconds;
+    if (scraperAdProgressFill) scraperAdProgressFill.style.width = '0%';
+    if (scraperAdCount) scraperAdCount.textContent = '0 Comments Loaded';
+    if (scraperAdStatusMsg) scraperAdStatusMsg.textContent = 'Fetching comments from Instagram API in background... Please wait 30s.';
+    scraperAdModal.classList.remove('hidden');
+
+    // Trigger Monetag Vignette/Video if available in window
+    try {
+      if (typeof window.show_873913e1a726a424c8ddcf7582dbaa61 === 'function') {
+        window.show_873913e1a726a424c8ddcf7582dbaa61();
+      }
+    } catch (e) {}
+
+    const interval = setInterval(() => {
+      secondsPassed++;
+      const secondsLeft = Math.max(0, totalSeconds - secondsPassed);
+      const pct = Math.min(100, Math.round((secondsPassed / totalSeconds) * 100));
+
+      if (scraperAdSec) scraperAdSec.textContent = secondsLeft;
+      if (scraperAdProgressFill) scraperAdProgressFill.style.width = `${pct}%`;
+
+      if (secondsPassed >= totalSeconds) {
+        clearInterval(interval);
+        scraperAdModal.classList.add('hidden');
+      }
+    }, 1000);
+  }
+
+  /* ==========================================
+     3. MANDATORY 15-SECOND CSV EXPORT AD MODAL
+     ========================================== */
+  const csvAdModal = document.getElementById('csv-ad-modal');
+  const csvAdSec = document.getElementById('csv-ad-sec');
+  const csvAdProgressFill = document.getElementById('csv-ad-progress-fill');
+
+  function triggerCsvExportWithAd(actionCallback) {
+    if (!csvAdModal) {
+      actionCallback();
+      return;
+    }
+
+    let secondsPassed = 0;
+    const totalSeconds = 15;
+
+    if (csvAdSec) csvAdSec.textContent = totalSeconds;
+    if (csvAdProgressFill) csvAdProgressFill.style.width = '0%';
+    csvAdModal.classList.remove('hidden');
+
+    const interval = setInterval(() => {
+      secondsPassed++;
+      const secondsLeft = Math.max(0, totalSeconds - secondsPassed);
+      const pct = Math.min(100, Math.round((secondsPassed / totalSeconds) * 100));
+
+      if (csvAdSec) csvAdSec.textContent = secondsLeft;
+      if (csvAdProgressFill) csvAdProgressFill.style.width = `${pct}%`;
+
+      if (secondsPassed >= totalSeconds) {
+        clearInterval(interval);
+        csvAdModal.classList.add('hidden');
+        actionCallback();
+      }
+    }, 1000);
+  }
 
   function highlightText(text, query) {
     if (!text) return '';

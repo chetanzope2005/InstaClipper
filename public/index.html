@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="monetag" content="873913e1a726a424c8ddcf7582dbaa61">
+  <script>(function(s){s.dataset.zone='11731084',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
   <link rel="icon" type="image/png" href="logo.png">
   <title>InstaClipper - All-In-One Instagram Utility Suite</title>
   <meta name="description" content="Extract comments & replies, download HD videos & Reels, and download MP3 audio tracks from Instagram with zero storage privacy and legal compliance.">
@@ -113,8 +114,29 @@
            =================================================================== -->
       <section id="view-home" class="view-panel active">
         <div class="home-hero">
-          <h2>Select a Feature to Begin</h2>
-          <p>Choose any tool below to extract comments, download HD videos, or extract MP3 songs from Instagram.</p>
+          <div class="hero-badge-pill">
+            <span class="pulse-dot-green"></span>
+            <span>Handcrafted for Creators, Analysts & Social Managers</span>
+          </div>
+          <h2>Instagram Media & Comment Intelligence</h2>
+          <p>Extract top comments with nested replies, download original HD Reel videos, and save background audio tracks in seconds—100% free with zero server storage privacy.</p>
+          
+          <div class="hero-stats-row">
+            <div class="stat-item">
+              <span class="stat-num">100%</span>
+              <span class="stat-label">Free & Unlimited</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-num">0 KB</span>
+              <span class="stat-label">Server Storage</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-num">Real-Time</span>
+              <span class="stat-label">Live Data Stream</span>
+            </div>
+          </div>
         </div>
 
         <!-- HOME PAGE AD PLACEMENT: Responsive Banner (100% Landing Page Impression Capture) -->
@@ -279,9 +301,9 @@
             
             <div class="toolbar-actions">
               <select id="sort-select" class="select-input">
+                <option value="likes" selected>Most Liked First</option>
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
-                <option value="likes">Most Liked First</option>
               </select>
 
               <button type="button" id="btn-export-csv" class="btn-action" title="Download all comments & replies as CSV file">
@@ -297,7 +319,16 @@
 
           <div class="feed-header-info">
             <span id="rendered-count-text">Showing 0 comments</span>
-            <span class="lazy-badge">⚡ Lazy Loaded (DOM Optimized)</span>
+            <span id="live-total-badge" class="meta-tag live-badge" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--success); font-weight: 700;">💬 Extracted 0 of 0 Total Comments</span>
+          </div>
+
+          <!-- Comment Extraction Notice Banner (Completely outside ad container) -->
+          <div class="comment-notice-banner" id="comment-notice-banner">
+            <div class="notice-icon" id="notice-icon">⏳</div>
+            <div class="notice-text">
+              <strong id="notice-status-title">Pro Tip:</strong>
+              <span id="notice-status-desc">For 100% complete and exact comment extraction, please wait until all background comments finish loading.</span>
+            </div>
           </div>
 
           <div id="comments-container" class="comments-feed"></div>
@@ -642,15 +673,15 @@
     </div>
   </div>
 
-  <!-- DOWNLOAD INTERSTITIAL AD MODAL (5-10 Sec High-Revenue Unit + Full User Control) -->
+  <!-- DOWNLOAD INTERSTITIAL AD MODAL (5s Mandatory Wait -> Skip Enabled for Video/Song) -->
   <div id="download-ad-modal" class="modal-overlay hidden">
     <div class="glass-card modal-card ad-interstitial-card">
       <div class="modal-header">
         <div class="ad-timer-title">
           <div class="ad-spinner-dot"></div>
-          <h3>Downloading file in <span id="ad-countdown-sec" class="highlight-timer">5</span> seconds...</h3>
+          <h3>Downloading file in <span id="ad-countdown-sec" class="highlight-timer">30</span>s...</h3>
         </div>
-        <button id="btn-close-download-ad" class="icon-btn modal-close" title="Close Ad & Download Now">&times;</button>
+        <button id="btn-close-download-ad" class="icon-btn modal-close hidden" title="Close Ad & Download Now">&times;</button>
       </div>
 
       <div class="modal-body text-center">
@@ -658,10 +689,10 @@
           <span>📢 Sponsored Ad helps keep InstaClipper 100% free and zero-storage!</span>
         </div>
 
-        <!-- 300x250 / 336x280 Medium Rectangle Interstitial Ad -->
-        <div class="ad-unit ad-rect-container" style="margin: 16px 0;">
+        <!-- Responsive Video / Display Ad Slot (Monetag / Adsterra SDK) -->
+        <div class="ad-unit ad-rect-container" style="margin: 12px 0;">
           <div class="ad-label">SPONSORED ADVERTISEMENT</div>
-          <div class="ad-slot ad-300x250" style="width: 300px; height: 250px; margin: 0 auto;">
+          <div class="ad-slot ad-video-responsive-slot">
             <script type="text/javascript">
               atOptions = {
                 'key' : '0791c4736a72d4000a5386d7a93a81b9',
@@ -676,9 +707,88 @@
         </div>
 
         <div class="ad-modal-controls">
-          <button type="button" id="btn-skip-download-ad" class="btn-primary glow-btn full-width">
-            <span>Skip Ad & Download File Now ⚡</span>
+          <button type="button" id="btn-skip-download-ad" class="btn-primary glow-btn full-width" disabled>
+            <span id="skip-btn-label">Skip Ad in 5s...</span>
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMMENT EXTRACTION COMPULSORY 30-SECOND AD & PROGRESS MODAL -->
+  <div id="scraper-ad-modal" class="modal-overlay hidden">
+    <div class="glass-card modal-card ad-interstitial-card" style="max-width: 500px; padding: 24px;">
+      <div class="modal-header text-center" style="border-bottom: none; padding-bottom: 0;">
+        <div class="ad-timer-title" style="justify-content: center; width: 100%;">
+          <div class="ad-spinner-dot"></div>
+          <h3>Fetching Comments... (<span id="scraper-ad-sec" class="highlight-timer">30</span>s)</h3>
+        </div>
+      </div>
+
+      <div class="modal-body text-center">
+        <!-- Live Progress Bar Fill (0% to 100% over 30s) -->
+        <div class="progress-bar-container" style="margin: 12px 0; height: 8px;">
+          <div id="scraper-ad-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+
+        <!-- Live Comment Counter (100, 200, 300...) -->
+        <div class="live-counter-box" style="background: rgba(253, 29, 29, 0.12); border: 1px solid rgba(253, 29, 29, 0.3); padding: 12px; border-radius: 12px; margin-bottom: 16px;">
+          <div style="font-weight: 700; color: var(--insta-orange); font-size: 1.15rem;" id="scraper-ad-count">0 Comments Loaded</div>
+          <small style="color: var(--text-muted);" id="scraper-ad-status-msg">Fetching comments from Instagram API in background... Please wait 30s.</small>
+        </div>
+
+        <!-- MONETAG VIDEO AD + ADSTERRA BANNER FALLBACK ZONE -->
+        <div id="monetag-modal-ad-zone" class="ad-unit ad-rect-container" style="margin: 14px 0;">
+          <div class="ad-label">SPONSORED ADVERTISEMENT</div>
+          <div class="ad-slot ad-video-responsive-slot">
+            <script type="text/javascript">
+              atOptions = {
+                'key' : '0791c4736a72d4000a5386d7a93a81b9',
+                'format' : 'iframe',
+                'height' : 250,
+                'width' : 300,
+                'params' : {}
+              };
+            </script>
+            <script type="text/javascript" src="https://www.highrevenueformat.com/0791c4736a72d4000a5386d7a93a81b9/invoke.js"></script>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CSV EXPORT MANDATORY 15-SECOND AD MODAL -->
+  <div id="csv-ad-modal" class="modal-overlay hidden">
+    <div class="glass-card modal-card ad-interstitial-card">
+      <div class="modal-header text-center">
+        <div class="ad-timer-title" style="justify-content: center; width: 100%;">
+          <div class="ad-spinner-dot"></div>
+          <h3>Preparing CSV Export... (<span id="csv-ad-sec" class="highlight-timer">15</span>s)</h3>
+        </div>
+      </div>
+
+      <div class="modal-body text-center">
+        <div class="progress-bar-container" style="margin: 10px 0 16px 0; height: 8px;">
+          <div id="csv-ad-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+
+        <div class="ad-unit ad-rect-container" style="margin: 12px 0;">
+          <div class="ad-label">MANDATORY SPONSORED ADVERTISEMENT</div>
+          <div class="ad-slot ad-video-responsive-slot">
+            <script type="text/javascript">
+              atOptions = {
+                'key' : '0791c4736a72d4000a5386d7a93a81b9',
+                'format' : 'iframe',
+                'height' : 250,
+                'width' : 300,
+                'params' : {}
+              };
+            </script>
+            <script type="text/javascript" src="https://www.highrevenueformat.com/0791c4736a72d4000a5386d7a93a81b9/invoke.js"></script>
+          </div>
+        </div>
+
+        <div class="ad-notice-banner">
+          <span>🔒 Mandatory 15s Ad - Your CSV file will automatically download when the countdown finishes!</span>
         </div>
       </div>
     </div>
