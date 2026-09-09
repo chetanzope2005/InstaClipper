@@ -742,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iframe.style.overflow = 'hidden';
     iframe.style.background = 'transparent';
     iframe.setAttribute('title', 'Advertisement');
-    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-top-navigation-by-user-activation');
 
     card.appendChild(iframe);
 
