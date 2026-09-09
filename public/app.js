@@ -1283,40 +1283,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 
-  /* ==========================================================================
-     SMART POLITE POPUP & SOCIAL BAR AD LOADER (Non-intrusive delayed loading)
-     Delays Monetag Vignette and Adsterra Social Bar so users are not annoyed.
-     Longer delay (60s) gives users plenty of time to view results peacefully.
-     ========================================================================== */
-  function initDelayedAds() {
-    let adsLoaded = false;
-
-    function loadAdScripts() {
-      if (adsLoaded) return;
-      adsLoaded = true;
-
-      // 1. Monetag Vignette Interstitial (Delayed injection)
-      try {
-        const mScript = document.createElement('script');
-        mScript.dataset.zone = '11731084';
-        mScript.src = 'https://n6wxm.com/vignette.min.js';
-        document.body.appendChild(mScript);
-      } catch (e) {}
-
-      // 2. Adsterra High-CPM Social Bar (Delayed injection)
-      try {
-        const sScript = document.createElement('script');
-        sScript.type = 'text/javascript';
-        sScript.src = 'https://pl31184962.profitableratecpmnetwork.com/e2/92/ab/e292abe04c26fde9786bf499d72fd52f.js';
-        document.body.appendChild(sScript);
-      } catch (e) {}
-    }
-
-    // Delay: Auto-trigger only after 60 seconds of active browsing
-    setTimeout(loadAdScripts, 60000);
-  }
-
-  initDelayedAds();
 });
 
 
