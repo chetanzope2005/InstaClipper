@@ -752,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <!DOCTYPE html>
           <html>
           <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;background:transparent;">
-            <script type="text/javascript">
+            <!-- <script type="text/javascript">
               atOptions = {
                 'key' : '1fba62e78b7b1bb355de2179b8e4c0d3',
                 'format' : 'iframe',
@@ -761,7 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'params' : {}
               };
             </script>
-            <script type="text/javascript" src="https://www.highrevenueformat.com/1fba62e78b7b1bb355de2179b8e4c0d3/invoke.js"></script>
+            <script type="text/javascript" src="https://www.highrevenueformat.com/1fba62e78b7b1bb355de2179b8e4c0d3/invoke.js"></script> -->
           </body>
           </html>
         `);
