@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get('key');
+    const width = Number(params.get('width')) || 728;
+    const height = Number(params.get('height')) || 90;
+
+    if (key) {
+      window.atOptions = {
+        key,
+        format: 'iframe',
+        height,
+        width,
+        params: {}
+      };
+
+      const adScript = document.createElement('script');
+      adScript.type = 'text/javascript';
+      adScript.src = `https://www.highrevenueformat.com/${encodeURIComponent(key)}/invoke.js`;
+      document.body.appendChild(adScript);
+    }
+  </script>
+</body>
+</html>

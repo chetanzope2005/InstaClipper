@@ -741,6 +741,8 @@ document.addEventListener('DOMContentLoaded', () => {
     iframe.style.border = 'none';
     iframe.style.overflow = 'hidden';
     iframe.style.background = 'transparent';
+    iframe.setAttribute('title', 'Advertisement');
+    iframe.setAttribute('sandbox', 'allow-scripts');
 
     card.appendChild(iframe);
 
