@@ -1,0 +1,12 @@
+services:  
+  - type: web  
+    name: instaclipper  
+    runtime: node  
+    plan: free  
+    buildCommand: npm install  
+    startCommand: node server.js  
+    envVars:  
+      - key: NODE_ENV  
+        value: production  
+      - key: INSTA_COOKIE_1  
+        sync: false  

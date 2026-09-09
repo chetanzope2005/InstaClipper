@@ -398,7 +398,9 @@ body {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 10px 0 30px rgba(0, 0, 0, 0.6);
   padding: 20px;
+  overflow-y: auto;
 }
+
 
 .app-drawer.open {
   transform: translateX(0);
@@ -746,12 +748,78 @@ body {
 .reply-card { background: rgba(14, 16, 24, 0.7); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: var(--radius-md); padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
 .reply-avatar { width: 32px; height: 32px; }
 
+/* Instagram-style Collapsible Reply Toggle */
+.btn-toggle-replies {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-top: 6px;
+  margin-left: 60px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+.btn-toggle-replies:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+.btn-toggle-replies .reply-line {
+  display: inline-block;
+  width: 22px;
+  height: 1px;
+  background: var(--text-dim);
+}
+
+/* Progressive Loading & Smart Comment Controls */
+.comment-card-wrapper {
+  animation: fadeInComment 0.3s ease-out forwards;
+}
+@keyframes fadeInComment {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.btn-load-more {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border-glass);
+  color: var(--text-main);
+  padding: 10px 24px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+.btn-load-more:hover {
+  background: rgba(253, 29, 29, 0.15);
+  border-color: rgba(253, 29, 29, 0.4);
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.feed-end-message {
+  font-size: 0.84rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  padding: 12px;
+}
+
 .lazy-sentinel { padding: 24px; display: flex; justify-content: center; align-items: center; }
 .pulse-dots { display: flex; gap: 8px; }
 .pulse-dots span { width: 10px; height: 10px; background: var(--insta-pink); border-radius: 50%; animation: pulseDot 1.4s ease-in-out infinite both; }
 .pulse-dots span:nth-child(2) { animation-delay: 0.2s; }
 .pulse-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes pulseDot { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1.1); opacity: 1; } }
+
 
 /* ==========================================================================
    AD MONETIZATION UNITS STYLING

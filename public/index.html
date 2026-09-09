@@ -4,15 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="monetag" content="873913e1a726a424c8ddcf7582dbaa61">
-  <script>(function(s){s.dataset.zone='11731084',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
   <link rel="icon" type="image/png" href="logo.png">
-  <title>InstaClipper - All-In-One Instagram Utility Suite</title>
-  <meta name="description" content="Extract comments & replies, download HD videos & Reels, and download MP3 audio tracks from Instagram with zero storage privacy and legal compliance.">
+  <title>InstaClipper - All-In-One Instagram Downloader & Comment Scraper</title>
+  <meta name="description" content="Download Instagram Reels & Videos in HD MP4, convert Reel audio to MP3, and extract comments for giveaway winner picking with 100% privacy and zero storage.">
+  <meta name="keywords" content="instagram downloader, instagram video download, instagram reel download, instagram mp3 download, instagram audio saver, instagram comment scraper, instagram giveaway picker, reels to mp3">
+  
+  <!-- Open Graph / Facebook / WhatsApp Preview -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="InstaClipper - Fast Instagram Video, Audio & Comment Tool">
+  <meta property="og:description" content="Free, fast Instagram utility suite. Download HD videos, extract high-quality MP3 audio, and pick giveaway winners.">
+  <meta property="og:image" content="logo.png">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="InstaClipper - All-In-One Instagram Utility Suite">
+  <meta name="twitter:description" content="Download HD Reels, convert audio to MP3, and export comments with zero storage privacy.">
+  <meta name="twitter:image" content="logo.png">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.5">
 </head>
+
 <body>
 
   <!-- Ambient Decorative Background Glows -->
@@ -59,6 +73,23 @@
     </nav>
 
     <div class="drawer-footer">
+      <!-- Sponsored Drawer Ad Slot -->
+      <div class="drawer-ad-container" style="margin-bottom: 8px; text-align: center;">
+        <div class="ad-label" style="font-size: 0.65rem; color: var(--text-dim); margin-bottom: 4px; letter-spacing: 0.05em;">SPONSORED</div>
+        <div class="ad-slot" style="min-height: 250px; display: flex; justify-content: center; align-items: center; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.02);">
+          <script type="text/javascript">
+            atOptions = {
+              'key' : '0791c4736a72d4000a5386d7a93a81b9',
+              'format' : 'iframe',
+              'height' : 250,
+              'width' : 300,
+              'params' : {}
+            };
+          </script>
+          <script type="text/javascript" src="https://www.highrevenueformat.com/0791c4736a72d4000a5386d7a93a81b9/invoke.js"></script>
+        </div>
+      </div>
+
       <button id="btn-drawer-session" class="btn-secondary full-width">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
@@ -68,6 +99,7 @@
       <div class="drawer-badge">🔒 Zero-Storage Active</div>
     </div>
   </aside>
+
 
   <div class="app-container">
     
@@ -91,18 +123,18 @@
       </div>
       
       <div class="header-actions">
-        <div class="privacy-badge" title="No user data or session keys are saved on the server disk.">
+        <div class="privacy-badge" title="100% memory-only processing. No user data stored.">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
           <span>Zero-Storage</span>
         </div>
-        <button id="btn-session-key-trigger" class="btn-secondary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+        <button id="btn-session-key-trigger" class="btn-secondary" title="Optional: Use your own dummy session ID for fastest rate limits or private accounts">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
-          <span id="session-status-label">Session ID Set</span>
+          <span id="session-status-label">Fastest Mode (Optional)</span>
         </button>
       </div>
     </header>
@@ -116,10 +148,10 @@
         <div class="home-hero">
           <div class="hero-badge-pill">
             <span class="pulse-dot-green"></span>
-            <span>Handcrafted for Creators, Analysts & Social Managers</span>
+            <span>Handcrafted for Creators, Analysts & Contest Hosts</span>
           </div>
           <h2>Instagram Media & Comment Intelligence</h2>
-          <p>Extract top comments with nested replies, download original HD Reel videos, and save background audio tracks in seconds—100% free with zero server storage privacy.</p>
+          <p>Extract comments & pick giveaway winners, download original HD Reel videos, and save background audio tracks in seconds—100% free with zero server storage privacy.</p>
           
           <div class="hero-stats-row">
             <div class="stat-item">
@@ -158,12 +190,12 @@
 
         <div class="home-cards-grid">
           
-          <!-- Card 1: Comment Scraper -->
+          <!-- Card 1: Giveaway Winner Picker & Comment Export -->
           <div class="feature-card glass-card" data-target="view-scraper">
-            <div class="card-badge">Most Popular</div>
-            <div class="feature-icon icon-purple">💬</div>
-            <h3>Comment Scraper</h3>
-            <p>Extract top-level comments and nested replies from any Reel or Post with real-time search & CSV export.</p>
+            <div class="card-badge">Contests & Export</div>
+            <div class="feature-icon icon-purple">🎁</div>
+            <h3>Giveaway Winner Picker & Comments</h3>
+            <p>Pick fair random winners for Instagram contests, filter by mentions/likes, and export complete comment logs to CSV.</p>
             <div class="card-action">
               <span>Open Tool</span>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -175,9 +207,10 @@
 
           <!-- Card 2: Video Downloader -->
           <div class="feature-card glass-card" data-target="view-video">
+            <div class="card-badge">No Login Required</div>
             <div class="feature-icon icon-pink">🎬</div>
-            <h3>Video Downloader</h3>
-            <p>Download original HD quality MP4 videos & Reels directly to your device with 1-click preview.</p>
+            <h3>HD Video & Reel Downloader</h3>
+            <p>Download original HD quality MP4 videos & Reels directly to your device with instant 1-click preview.</p>
             <div class="card-action">
               <span>Open Tool</span>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -189,9 +222,10 @@
 
           <!-- Card 3: Song Downloader -->
           <div class="feature-card glass-card" data-target="view-song">
+            <div class="card-badge">MP3 in 2 Seconds</div>
             <div class="feature-icon icon-gold">🎵</div>
-            <h3>Song Downloader</h3>
-            <p>Extract background music and original sound audio tracks from Instagram Reels as MP3 files.</p>
+            <h3>Trending Audio & Song Saver</h3>
+            <p>Extract background music and original sound audio tracks from Instagram Reels into crisp MP3 tracks in 2 seconds.</p>
             <div class="card-action">
               <span>Open Tool</span>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -210,8 +244,8 @@
       <section id="view-scraper" class="view-panel">
         <div class="glass-card module-card">
           <div class="card-header">
-            <h2>💬 Comment & Reply Scraper</h2>
-            <p>Enter an Instagram Post or Reel URL to extract all comments and replies.</p>
+            <h2>🎁 Giveaway Winner Picker & Comment Export</h2>
+            <p>Paste any Instagram Post or Reel URL to extract comments, pick random contest winners, and download full CSV reports.</p>
           </div>
 
           <form id="scraper-form">
@@ -227,8 +261,21 @@
                   <button type="button" class="btn-paste-input icon-btn" title="Paste URL"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg></button>
                 </div>
               </div>
+
+              <!-- Optional Custom Session ID Accordion -->
+              <details id="scraper-custom-session-details" class="custom-session-accordion" style="border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 10px; padding: 10px 14px; background: rgba(255, 255, 255, 0.02); margin-top: 4px;">
+                <summary style="font-size: 0.84rem; color: #c084fc; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                  <span>⚡ Advanced: Custom Session ID (Optional - For Private Posts or Highest Speed)</span>
+                </summary>
+                <div style="margin-top: 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">
+                  <p>By default, InstaClipper's server pool extracts public comments automatically without requiring any login! If you wish to scrape private accounts you follow or want dedicated private speed, you can optionally provide your own Session ID below:</p>
+                  <div class="input-wrapper" style="margin-top: 8px;">
+                    <input type="password" id="scraper-custom-session" placeholder="Optional sessionid (e.g. 684920...%3A...)">
+                  </div>
+                </div>
+              </details>
             </div>
-            <div class="form-actions">
+            <div class="form-actions" style="margin-top: 18px;">
               <button type="submit" id="btn-submit-scraper" class="btn-primary glow-btn">
                 <span>Extract Comments & Replies</span>
                 <div class="spinner hidden" id="spinner-scraper"></div>
@@ -322,6 +369,16 @@
             <span id="live-total-badge" class="meta-tag live-badge" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--success); font-weight: 700;">💬 Extracted 0 of 0 Total Comments</span>
           </div>
 
+          <!-- Real-Time Background Streaming Status Bar -->
+          <div id="live-stream-progress-bar" class="hidden" style="margin: 6px 0 16px 0; padding: 10px 16px; background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="pulse-dot-green"></div>
+              <span id="live-stream-progress-msg" style="font-size: 0.85rem; font-weight: 600; color: #e2e8f0;">⚡ Live Streaming in background... You can browse & search now!</span>
+            </div>
+            <div class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>
+          </div>
+
+
           <!-- Comment Extraction Notice Banner (Completely outside ad container) -->
           <div class="comment-notice-banner" id="comment-notice-banner">
             <div class="notice-icon" id="notice-icon">⏳</div>
@@ -332,10 +389,17 @@
           </div>
 
           <div id="comments-container" class="comments-feed"></div>
-          <div id="lazy-sentinel" class="lazy-sentinel">
+          <div id="lazy-sentinel" class="lazy-sentinel" style="flex-direction: column; gap: 12px;">
             <div class="pulse-dots hidden" id="lazy-loader"><span></span><span></span><span></span></div>
+            <button type="button" id="btn-load-more-comments" class="btn-load-more hidden">
+              <span>View More Comments ⟳</span>
+            </button>
+            <div id="feed-end-message" class="feed-end-message hidden">
+              <span>✨ You've reached the end of all comments!</span>
+            </div>
           </div>
         </div>
+
       </section>
 
       <!-- ===================================================================
@@ -379,23 +443,6 @@
         <!-- Video Download Results Display -->
         <div id="results-video" class="results-section hidden">
           
-          <!-- AD PLACEMENT 2: Banner Ad Above Video Download Card -->
-          <div class="ad-unit ad-banner-top">
-            <div class="ad-label">SPONSORED ADVERTISEMENT</div>
-            <div class="ad-slot ad-728x90">
-              <script type="text/javascript">
-                atOptions = {
-                  'key' : '1fba62e78b7b1bb355de2179b8e4c0d3',
-                  'format' : 'iframe',
-                  'height' : 90,
-                  'width' : 728,
-                  'params' : {}
-                };
-              </script>
-              <script type="text/javascript" src="https://www.highrevenueformat.com/1fba62e78b7b1bb355de2179b8e4c0d3/invoke.js"></script>
-            </div>
-          </div>
-
           <div class="glass-card media-results-card">
             <div class="media-preview-container">
               <video id="video-player" controls preload="metadata" poster=""></video>
@@ -419,7 +466,25 @@
             </div>
           </div>
 
+          <!-- Non-Intrusive Sponsored Banner Below Media Card -->
+          <div class="ad-unit ad-banner-top" style="margin-top: 20px;">
+            <div class="ad-label">SPONSORED ADVERTISEMENT</div>
+            <div class="ad-slot ad-728x90">
+              <script type="text/javascript">
+                atOptions = {
+                  'key' : '1fba62e78b7b1bb355de2179b8e4c0d3',
+                  'format' : 'iframe',
+                  'height' : 90,
+                  'width' : 728,
+                  'params' : {}
+                };
+              </script>
+              <script type="text/javascript" src="https://www.highrevenueformat.com/1fba62e78b7b1bb355de2179b8e4c0d3/invoke.js"></script>
+            </div>
+          </div>
+
         </div>
+
       </section>
 
       <!-- ===================================================================
@@ -464,23 +529,6 @@
         <!-- Song Download Results Display -->
         <div id="results-song" class="results-section hidden">
           
-          <!-- AD PLACEMENT 2: Banner Ad Above Song Download Card -->
-          <div class="ad-unit ad-banner-top">
-            <div class="ad-label">SPONSORED ADVERTISEMENT</div>
-            <div class="ad-slot ad-728x90">
-              <script type="text/javascript">
-                atOptions = {
-                  'key' : '1fba62e78b7b1bb355de2179b8e4c0d3',
-                  'format' : 'iframe',
-                  'height' : 90,
-                  'width' : 728,
-                  'params' : {}
-                };
-              </script>
-              <script type="text/javascript" src="https://www.highrevenueformat.com/1fba62e78b7b1bb355de2179b8e4c0d3/invoke.js"></script>
-            </div>
-          </div>
-
           <div class="glass-card media-results-card song-layout">
             <div class="audio-artwork-container">
               <img id="song-artwork" src="" alt="Audio Artwork">
@@ -500,13 +548,36 @@
                     <polyline points="7 10 12 15 17 10"></polyline>
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
-                  <span>Download Audio Track (MP3)</span>
+                  <span>⬇ Download Audio Track (MP3)</span>
                 </a>
+                <!-- High Quality Audio Guarantee Tag -->
+                <div style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: #4ade80; font-weight: 500;">
+                  <span>⚡ 100% Genuine 192kbps MP3 Audio File</span>
+                </div>
               </div>
+
+            </div>
+          </div>
+
+          <!-- Non-Intrusive Sponsored Banner Below Song Card -->
+          <div class="ad-unit ad-banner-top" style="margin-top: 20px;">
+            <div class="ad-label">SPONSORED ADVERTISEMENT</div>
+            <div class="ad-slot ad-728x90">
+              <script type="text/javascript">
+                atOptions = {
+                  'key' : '1fba62e78b7b1bb355de2179b8e4c0d3',
+                  'format' : 'iframe',
+                  'height' : 90,
+                  'width' : 728,
+                  'params' : {}
+                };
+              </script>
+              <script type="text/javascript" src="https://www.highrevenueformat.com/1fba62e78b7b1bb355de2179b8e4c0d3/invoke.js"></script>
             </div>
           </div>
 
         </div>
+
       </section>
 
     </main>
@@ -673,13 +744,13 @@
     </div>
   </div>
 
-  <!-- DOWNLOAD INTERSTITIAL AD MODAL (5s Mandatory Wait -> Skip Enabled for Video/Song) -->
+  <!-- DOWNLOAD INTERSTITIAL AD MODAL (4s Quick Wait -> Skip Enabled for Video/Song) -->
   <div id="download-ad-modal" class="modal-overlay hidden">
     <div class="glass-card modal-card ad-interstitial-card">
       <div class="modal-header">
         <div class="ad-timer-title">
           <div class="ad-spinner-dot"></div>
-          <h3>Downloading file in <span id="ad-countdown-sec" class="highlight-timer">30</span>s...</h3>
+          <h3>Downloading file in <span id="ad-countdown-sec" class="highlight-timer">4</span>s...</h3>
         </div>
         <button id="btn-close-download-ad" class="icon-btn modal-close hidden" title="Close Ad & Download Now">&times;</button>
       </div>
@@ -708,25 +779,25 @@
 
         <div class="ad-modal-controls">
           <button type="button" id="btn-skip-download-ad" class="btn-primary glow-btn full-width" disabled>
-            <span id="skip-btn-label">Skip Ad in 5s...</span>
+            <span id="skip-btn-label">Skip Ad in 4s...</span>
           </button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- COMMENT EXTRACTION COMPULSORY 30-SECOND AD & PROGRESS MODAL -->
+  <!-- COMMENT EXTRACTION QUICK 4-SECOND AD & PROGRESS MODAL -->
   <div id="scraper-ad-modal" class="modal-overlay hidden">
     <div class="glass-card modal-card ad-interstitial-card" style="max-width: 500px; padding: 24px;">
       <div class="modal-header text-center" style="border-bottom: none; padding-bottom: 0;">
         <div class="ad-timer-title" style="justify-content: center; width: 100%;">
           <div class="ad-spinner-dot"></div>
-          <h3>Fetching Comments... (<span id="scraper-ad-sec" class="highlight-timer">30</span>s)</h3>
+          <h3>Fetching Comments... (<span id="scraper-ad-sec" class="highlight-timer">4</span>s)</h3>
         </div>
       </div>
 
       <div class="modal-body text-center">
-        <!-- Live Progress Bar Fill (0% to 100% over 30s) -->
+        <!-- Live Progress Bar Fill (0% to 100% over 4s) -->
         <div class="progress-bar-container" style="margin: 12px 0; height: 8px;">
           <div id="scraper-ad-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
         </div>
@@ -734,7 +805,7 @@
         <!-- Live Comment Counter (100, 200, 300...) -->
         <div class="live-counter-box" style="background: rgba(253, 29, 29, 0.12); border: 1px solid rgba(253, 29, 29, 0.3); padding: 12px; border-radius: 12px; margin-bottom: 16px;">
           <div style="font-weight: 700; color: var(--insta-orange); font-size: 1.15rem;" id="scraper-ad-count">0 Comments Loaded</div>
-          <small style="color: var(--text-muted);" id="scraper-ad-status-msg">Fetching comments from Instagram API in background... Please wait 30s.</small>
+          <small style="color: var(--text-muted);" id="scraper-ad-status-msg">Fetching comments from Instagram API in background... Loading results live!</small>
         </div>
 
         <!-- MONETAG VIDEO AD + ADSTERRA BANNER FALLBACK ZONE -->
@@ -751,18 +822,19 @@
               };
             </script>
             <script type="text/javascript" src="https://www.highrevenueformat.com/0791c4736a72d4000a5386d7a93a81b9/invoke.js"></script>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- CSV EXPORT MANDATORY 15-SECOND AD MODAL -->
+  <!-- CSV EXPORT 3-SECOND AD MODAL -->
   <div id="csv-ad-modal" class="modal-overlay hidden">
     <div class="glass-card modal-card ad-interstitial-card">
       <div class="modal-header text-center">
         <div class="ad-timer-title" style="justify-content: center; width: 100%;">
           <div class="ad-spinner-dot"></div>
-          <h3>Preparing CSV Export... (<span id="csv-ad-sec" class="highlight-timer">15</span>s)</h3>
+          <h3>Preparing CSV Export... (<span id="csv-ad-sec" class="highlight-timer">3</span>s)</h3>
         </div>
       </div>
 
@@ -788,15 +860,13 @@
         </div>
 
         <div class="ad-notice-banner">
-          <span>🔒 Mandatory 15s Ad - Your CSV file will automatically download when the countdown finishes!</span>
+          <span>🔒 Mandatory 3s Ad - Your CSV file will automatically download when the countdown finishes!</span>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- High RPM Social Bar Network Script -->
-  <script type="text/javascript" src="https://pl31184962.profitableratecpmnetwork.com/e2/92/ab/e292abe04c26fde9786bf499d72fd52f.js"></script>
-
-  <script src="app.js"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>
+

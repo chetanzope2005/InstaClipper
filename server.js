@@ -1,9 +1,13 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
+import { spawn } from 'child_process';
+import ffmpegStatic from 'ffmpeg-static';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +17,16 @@ const PORT = process.env.PORT || 3000;
 
 // Enable Reverse Proxy Trust (Required for Render, Vercel, Cloudflare, Nginx)
 app.set('trust proxy', 1);
+
+// Enable Gzip/Brotli HTTP Compression (Skip SSE streaming endpoint to prevent chunk buffering)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.path === '/api/scrape-comments-stream' || (req.headers.accept && req.headers.accept.includes('text/event-stream'))) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
 
 // Security Response Headers Middleware
 app.use((req, res, next) => {
@@ -25,7 +39,11 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: 0,
+  etag: false
+}));
+
 
 /* ==========================================================================
    RATE LIMITERS (Abuse & Bot Spam Protection)
@@ -242,21 +260,34 @@ function formatSingleComment(item) {
 }
 
 function getInstagramHeaders(sessionId) {
-  const cleanSessionId = sessionId ? sessionId.trim().replace(/^sessionid=/, '') : '';
-  const match = cleanSessionId.match(/^(\d+)(?:%3A|:)/);
+  // Decode URL-encoded session IDs (e.g. %3A -> :)
+  let cleanSessionId = sessionId ? sessionId.trim().replace(/^sessionid=/, '') : '';
+  try {
+    if (cleanSessionId.includes('%')) {
+      cleanSessionId = decodeURIComponent(cleanSessionId);
+    }
+  } catch (e) {}
+
+  const match = cleanSessionId.match(/^(\d+)(?::|%3A)/i);
   const dsUserId = match ? match[1] : '';
 
   let cookieHeader = `sessionid=${cleanSessionId};`;
   if (dsUserId) {
     cookieHeader += ` ds_user_id=${dsUserId};`;
   }
+  // Add csrftoken placeholder so Instagram accepts the session
+  cookieHeader += ' csrftoken=absent;';
 
   return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
     'X-IG-App-ID': '936619743392459',
+    'X-ASBD-ID': '129477',
     'Cookie': cookieHeader,
-    'Accept': '*/*',
+    'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://www.instagram.com',
+    'Referer': 'https://www.instagram.com/',
+    'Sec-Fetch-Dest': 'empty',
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'same-origin',
     'X-Requested-With': 'XMLHttpRequest'
@@ -264,7 +295,242 @@ function getInstagramHeaders(sessionId) {
 }
 
 /**
- * LAYER 4: HTML Meta Scraper (Public Bot User-Agent)
+ * ==============================================================================
+ * BACKEND COOKIE POOL MANAGER (Dummy / Secondary Accounts)
+ * Automatically distributes requests, rotates cookies, and cools down rate-limited accounts.
+ * ==============================================================================
+ */
+class CookiePoolManager {
+  constructor() {
+    this.index = 0;
+    this.cooldowns = new Map();
+  }
+
+  getPool() {
+    const list = [];
+    for (let i = 1; i <= 20; i++) {
+      const val = process.env[`INSTA_COOKIE_${i}`];
+      if (val && val.trim()) {
+        const clean = val.trim().replace(/^sessionid=/, '');
+        if (clean && !list.includes(clean)) list.push(clean);
+      }
+    }
+    if (process.env.INSTA_SESSION_IDS) {
+      process.env.INSTA_SESSION_IDS.split(/[,;\n]/).forEach(c => {
+        const clean = c.trim().replace(/^sessionid=/, '');
+        if (clean && !list.includes(clean)) list.push(clean);
+      });
+    }
+    if (process.env.SESSION_ID) {
+      const clean = process.env.SESSION_ID.trim().replace(/^sessionid=/, '');
+      if (clean && !list.includes(clean)) list.push(clean);
+    }
+    return list;
+  }
+
+  getNextSessionId(userProvidedSessionId) {
+    // 1. If user provided their own custom session ID for "Fastest Mode", use it!
+    if (userProvidedSessionId && userProvidedSessionId.trim()) {
+      return userProvidedSessionId.trim().replace(/^sessionid=/, '');
+    }
+
+    // 2. Otherwise pick from backend cookie pool (.env)
+    const pool = this.getPool();
+    if (pool.length === 0) {
+      return null;
+    }
+
+    const now = Date.now();
+    const healthy = pool.filter(c => {
+      const cd = this.cooldowns.get(c) || 0;
+      return now > cd;
+    });
+
+    const candidatePool = healthy.length > 0 ? healthy : pool;
+    const selected = candidatePool[this.index % candidatePool.length];
+    this.index = (this.index + 1) % candidatePool.length;
+    return selected;
+  }
+
+  markCooldown(cookie, cooldownMinutes = 10) {
+    if (!cookie) return;
+    const clean = cookie.trim().replace(/^sessionid=/, '');
+    this.cooldowns.set(clean, Date.now() + cooldownMinutes * 60 * 1000);
+    console.warn(`[CookiePool] Session ID (...${clean.slice(-6)}) cooled down for ${cooldownMinutes}m to protect account.`);
+  }
+}
+
+const cookiePool = new CookiePoolManager();
+
+/**
+ * LAYER 1: PUBLIC EMBED & OPENGRAPH META SCRAPER (ZERO LOGIN / ZERO COOKIES)
+ * Uses Instagram oEmbed API + web scraping fallbacks for public Reels and Posts.
+ */
+async function fetchMediaPublic(shortcode) {
+  const errors = [];
+
+  // Strategy 1: Use Instagram's public oEmbed API to get basic metadata
+  // Then scrape the reel page with a bot user-agent to extract video URL
+  let oembedData = null;
+  try {
+    const oembedRes = await axios.get(
+      `https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent('https://www.instagram.com/reel/' + shortcode + '/')}`,
+      { timeout: 8000, validateStatus: s => s === 200 }
+    );
+    oembedData = oembedRes.data;
+  } catch (e) {
+    try {
+      const oembedRes2 = await axios.get(
+        `https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent('https://www.instagram.com/p/' + shortcode + '/')}`,
+        { timeout: 8000, validateStatus: s => s === 200 }
+      );
+      oembedData = oembedRes2.data;
+    } catch (e2) {
+      errors.push(`oembed: ${e2.message}`);
+    }
+  }
+
+  // Strategy 2: Scrape the reel page with facebookexternalhit bot user-agent
+  // to extract video URL from OpenGraph tags or page data
+  for (const pageUrl of [
+    `https://www.instagram.com/reel/${shortcode}/`,
+    `https://www.instagram.com/p/${shortcode}/`
+  ]) {
+    try {
+      const res = await axios.get(pageUrl, {
+        headers: {
+          'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9'
+        },
+        timeout: 10000,
+        maxRedirects: 5,
+        validateStatus: s => s < 400
+      });
+
+      const html = String(res.data || '');
+
+      // Extract video URL from various patterns
+      let videoUrl = '';
+      
+      // Pattern 1: og:video meta tag
+      const ogVideo = html.match(/property="og:video(?::secure_url)?"[^>]*content="([^"]+)"/i) ||
+                      html.match(/content="([^"]+)"[^>]*property="og:video(?::secure_url)?"/i) ||
+                      html.match(/property='og:video(?::secure_url)?'[^>]*content='([^']+)'/i);
+      if (ogVideo) videoUrl = ogVideo[1].replace(/&amp;/g, '&');
+
+      // Pattern 2: JSON data in page scripts (SharedData)
+      if (!videoUrl) {
+        const jsonMatch = html.match(/"video_url"\s*:\s*"(https?:[^"]+\.mp4[^"]*)"/i);
+        if (jsonMatch) videoUrl = jsonMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+      }
+
+      // Pattern 3: video_versions in JSON
+      if (!videoUrl) {
+        const vvMatch = html.match(/"video_versions".*?"url"\s*:\s*"(https?:[^"]+)"/i);
+        if (vvMatch) videoUrl = vvMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+      }
+
+      // Extract thumbnail from og:image
+      let thumbnail = '';
+      const ogImage = html.match(/property="og:image"[^>]*content="([^"]+)"/i) ||
+                      html.match(/content="([^"]+)"[^>]*property="og:image"/i);
+      if (ogImage) thumbnail = ogImage[1].replace(/&amp;/g, '&');
+
+      // Extract caption from og:title or og:description
+      let caption = '';
+      const ogDesc = html.match(/property="og:description"[^>]*content="([^"]+)"/i) ||
+                     html.match(/content="([^"]+)"[^>]*property="og:description"/i) ||
+                     html.match(/property="og:title"[^>]*content="([^"]+)"/i);
+      if (ogDesc) caption = ogDesc[1].replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&');
+
+      // Get username from oembed or page
+      const username = oembedData?.author_name || 'instagram_creator';
+
+      if (videoUrl) {
+        console.log(`[PublicScraper] Found video via bot-scraper for ${shortcode}: ${videoUrl.substring(0, 60)}...`);
+        return {
+          video_versions: [{ url: videoUrl, width: 1080, height: 1920 }],
+          image_versions2: { candidates: [{ url: thumbnail }] },
+          caption: { text: caption },
+          user: { username }
+        };
+      }
+
+      // Strategy 2b: If no video URL but we have thumbnail from oembed, it might be an image post
+      if (thumbnail && oembedData) {
+        // Return thumbnail as image (not a video post)
+        return {
+          video_versions: [],
+          image_versions2: { candidates: [{ url: thumbnail }] },
+          caption: { text: caption },
+          user: { username }
+        };
+      }
+    } catch (e) {
+      errors.push(`scrape_${pageUrl}: ${e.message}`);
+    }
+  }
+
+  // Strategy 3: Try Instagram embed/captioned page
+  for (const embedUrl of [
+    `https://www.instagram.com/reel/${shortcode}/embed/captioned/`,
+    `https://www.instagram.com/p/${shortcode}/embed/captioned/`
+  ]) {
+    try {
+      const res = await axios.get(embedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Fetch-Mode': 'navigate'
+        },
+        timeout: 7000,
+        validateStatus: s => s === 200
+      });
+
+      const html = String(res.data || '');
+
+      let videoUrl = '';
+      const vMatch = html.match(/class="EmbeddedVideo"[^>]*src="([^"]+)"/i) ||
+                     html.match(/<video[^>]*src="([^"]+)"/i) ||
+                     html.match(/"video_url"\s*:\s*"([^"]+)"/i) ||
+                     html.match(/property="og:video(?::secure_url)?"[^>]*content="([^"]+)"/i);
+
+      if (vMatch && vMatch[1]) {
+        videoUrl = vMatch[1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+      }
+
+      const tMatch = html.match(/class="EmbeddedVideoImage"[^>]*src="([^"]+)"/i) ||
+                     html.match(/property="og:image"[^>]*content="([^"]+)"/i);
+      let thumbnail = tMatch ? tMatch[1].replace(/&amp;/g, '&') : '';
+
+      const cMatch = html.match(/property="og:title"[^>]*content="([^"]+)"/i) ||
+                     html.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/i);
+      let caption = cMatch ? cMatch[1].replace(/<[^>]+>/g, '').trim().replace(/&quot;/g, '"') : '';
+
+      const username = oembedData?.author_name || 'instagram_creator';
+
+      if (videoUrl) {
+        console.log(`[PublicScraper] Found video via embed for ${shortcode}`);
+        return {
+          video_versions: [{ url: videoUrl, width: 1080, height: 1920 }],
+          image_versions2: { candidates: [{ url: thumbnail }] },
+          caption: { text: caption },
+          user: { username }
+        };
+      }
+    } catch (e) {
+      errors.push(`embed: ${e.message}`);
+    }
+  }
+
+  console.log(`[PublicScraper] All public strategies failed for ${shortcode}: ${errors.join(' | ')}`);
+  return null;
+}
+
+/**
+ * OpenGraph Meta Scraper (Bot User-Agent)
  */
 async function fetchMediaFromHtml(shortcode) {
   const cleanUrl = getCleanPostUrl(shortcode);
@@ -323,89 +589,152 @@ async function fetchMediaFromHtml(shortcode) {
 
 /**
  * Multi-Layer Bulletproof Instagram Media Extractor Engine
+ * Layer 1: Public Scraping (Zero Login / Zero Cookies Required)
+ * Layer 2: /api/v1/media/{mediaId}/info/ with authenticated session (follows redirects)
+ * Layer 3: /api/graphql/ (modern GraphQL - authenticated)
+ * Layer 4: /api/v1/media/by_url/ (Authenticated)
  */
 async function fetchInstagramMediaItem(shortcode, mediaId, headers) {
-  const cleanUrl = getCleanPostUrl(shortcode);
   const errors = [];
 
-  // Layer 1: /api/v1/media/{mediaId}/info/
+  // LAYER 1: Public Scraping (Zero Login / Zero Cookies Required)
   try {
-    const infoUrl = `https://www.instagram.com/api/v1/media/${mediaId}/info/`;
-    const res1 = await axios.get(infoUrl, {
-      headers,
-      timeout: 9000,
-      maxRedirects: 0,
-      validateStatus: s => s === 200
-    });
-    if (res1.data?.items?.[0]) {
-      return res1.data.items[0];
+    const publicItem = await fetchMediaPublic(shortcode);
+    if (publicItem && publicItem.video_versions && publicItem.video_versions.length > 0) {
+      return publicItem;
     }
-  } catch (e1) {
-    errors.push(`media_info: ${e1.message}`);
-  }
-
-  // Layer 2: /api/v1/media/by_url/
-  try {
-    const byUrlEndpoint = `https://www.instagram.com/api/v1/media/by_url/?url=${encodeURIComponent(cleanUrl)}`;
-    const res2 = await axios.get(byUrlEndpoint, {
-      headers,
-      timeout: 9000,
-      maxRedirects: 0,
-      validateStatus: s => s === 200
-    });
-    if (res2.data?.items?.[0]) {
-      return res2.data.items[0];
+    if (publicItem) {
+      errors.push('public_layer: found but no video_versions');
     }
-  } catch (e2) {
-    errors.push(`by_url: ${e2.message}`);
+  } catch (e0) {
+    errors.push(`public_layer: ${e0.message}`);
   }
 
-  // Layer 3: GraphQL Query Hash
-  try {
-    const gqlUrl = `https://www.instagram.com/graphql/query/?query_hash=b5a47637841c816503c2069695d705c7&variables=${encodeURIComponent(JSON.stringify({ shortcode }))}`;
-    const res3 = await axios.get(gqlUrl, {
-      headers,
-      timeout: 9000,
-      maxRedirects: 0,
-      validateStatus: s => s === 200
-    });
-    if (res3.data?.data?.shortcode_media) {
-      const media = res3.data.data.shortcode_media;
-      return {
-        video_versions: media.video_url ? [{ url: media.video_url, width: 1080, height: 1920 }] : [],
-        image_versions2: { candidates: [{ url: media.display_url }] },
-        caption: { text: media.edge_media_to_caption?.edges?.[0]?.node?.text || '' },
-        user: { username: media.owner?.username || 'user' }
-      };
+  // LAYER 2: /api/v1/media/{mediaId}/info/ with session cookie
+  // Note: Instagram redirects HTTP -> HTTPS then to the same URL (self-redirect)
+  // We need to detect this and retry with the final URL directly
+  if (headers && headers.Cookie && mediaId && mediaId !== '0') {
+    try {
+      const infoUrl = `https://www.instagram.com/api/v1/media/${mediaId}/info/`;
+      // First request to check if it redirects
+      const res1 = await axios.get(infoUrl, {
+        headers: { ...headers, 'Referer': `https://www.instagram.com/reel/${shortcode}/` },
+        timeout: 12000,
+        maxRedirects: 0,
+        validateStatus: s => true
+      });
+
+      let finalData = null;
+      if (res1.status === 200 && res1.data?.items?.[0]) {
+        finalData = res1.data;
+      } else if ((res1.status === 301 || res1.status === 302) && res1.headers?.location) {
+        // Follow the redirect once manually to avoid redirect loops
+        const redirectUrl = res1.headers.location.startsWith('http')
+          ? res1.headers.location
+          : `https://www.instagram.com${res1.headers.location}`;
+        try {
+          const res1b = await axios.get(redirectUrl, {
+            headers: { ...headers, 'Referer': `https://www.instagram.com/reel/${shortcode}/` },
+            timeout: 10000,
+            maxRedirects: 0,
+            validateStatus: s => true
+          });
+          if (res1b.status === 200 && res1b.data?.items?.[0]) {
+            finalData = res1b.data;
+          }
+        } catch(er) {
+          errors.push(`media_info_redirect: ${er.message}`);
+        }
+      }
+
+      if (finalData?.items?.[0]) {
+        return finalData.items[0];
+      }
+      if (res1.status === 401 || res1.status === 403) {
+        errors.push(`media_info: HTTP ${res1.status} - session invalid or expired`);
+      } else {
+        errors.push(`media_info: HTTP ${res1.status} - no items in response`);
+      }
+    } catch (e1) {
+      errors.push(`media_info: ${e1.message}`);
     }
-  } catch (e3) {
-    errors.push(`graphql: ${e3.message}`);
   }
 
-  // Layer 4: HTML Meta Scraper Fallback
-  try {
-    const htmlResult = await fetchMediaFromHtml(shortcode);
-    return {
-      video_versions: [{ url: htmlResult.videoUrl, width: htmlResult.width, height: htmlResult.height }],
-      image_versions2: { candidates: [{ url: htmlResult.thumbnail }] },
-      caption: { text: htmlResult.caption },
-      user: { username: htmlResult.username }
-    };
-  } catch (e4) {
-    errors.push(`html_scraper: ${e4.message}`);
+  // LAYER 3: Modern Instagram GraphQL API (authenticated)
+  if (headers && headers.Cookie) {
+    try {
+      // Use the newer Instagram web API endpoint
+      const docId = '8845758582119845'; // Reel/Post media info doc ID
+      const variables = JSON.stringify({ shortcode, __relay_internal__pv__IG_REELS_VIDEO_TILES_AND_BADGES_ENABLEDrelayprovider: false });
+      const gqlUrl = `https://www.instagram.com/api/graphql`;
+      const gqlRes = await axios.post(gqlUrl, new URLSearchParams({
+        variables,
+        doc_id: docId
+      }).toString(), {
+        headers: {
+          ...headers,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': `https://www.instagram.com/reel/${shortcode}/`
+        },
+        timeout: 10000,
+        maxRedirects: 0,
+        validateStatus: s => true
+      });
+
+      if (gqlRes.status === 200 && typeof gqlRes.data === 'object') {
+        const media = gqlRes.data?.data?.xdt_shortcode_media;
+        if (media) {
+          return {
+            video_versions: media.video_url ? [{ url: media.video_url, width: media.dimensions?.width || 1080, height: media.dimensions?.height || 1920 }] : [],
+            image_versions2: { candidates: [{ url: media.display_url || '' }] },
+            caption: { text: media.edge_media_to_caption?.edges?.[0]?.node?.text || '' },
+            user: { username: media.owner?.username || 'user' },
+            clips_metadata: media.clips_metadata
+          };
+        }
+      }
+    } catch (e3) {
+      errors.push(`graphql_v2: ${e3.message}`);
+    }
   }
 
-  throw new Error(`Media fetch failed across all 4 layers (${errors.join(' | ')})`);
+  // LAYER 4: /api/v1/media/by_url/
+  if (headers && headers.Cookie) {
+    try {
+      const cleanUrl = getCleanPostUrl(shortcode);
+      const byUrlEndpoint = `https://www.instagram.com/api/v1/media/by_url/?url=${encodeURIComponent(cleanUrl)}`;
+      const res2 = await axios.get(byUrlEndpoint, {
+        headers,
+        timeout: 9000,
+        maxRedirects: 0,
+        validateStatus: s => true
+      });
+      if (res2.status === 200 && res2.data?.items?.[0]) {
+        return res2.data.items[0];
+      }
+    } catch (e2) {
+      errors.push(`by_url: ${e2.message}`);
+    }
+  }
+
+  throw new Error(`Media fetch failed across all layers (${errors.join(' | ')})`);
 }
 
 /* ==========================================================================
-   FEATURE 1: INSTAGRAM COMMENT & REPLIES SCRAPER API
+   FEATURE 1: INSTAGRAM GIVEAWAY WINNER PICKER & COMMENT SCRAPER API
    ========================================================================== */
 app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
   const { postUrl, sessionId } = req.body;
 
-  if (!postUrl || !sessionId) {
-    return res.status(400).json({ error: 'Post URL and Session ID are required.' });
+  if (!postUrl) {
+    return res.status(400).json({ error: 'Instagram Post or Reel URL is required.' });
+  }
+
+  const effectiveSessionId = cookiePool.getNextSessionId(sessionId);
+  if (!effectiveSessionId) {
+    return res.status(400).json({
+      error: 'No Instagram Session ID available. Please configure backend dummy accounts in server .env (INSTA_COOKIE_1) or provide a custom Session ID in the app.'
+    });
   }
 
   const shortcode = parseShortcode(postUrl);
@@ -420,7 +749,7 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
     return res.status(400).json({ error: `Shortcode conversion error: ${err.message}` });
   }
 
-  const headers = getInstagramHeaders(sessionId);
+  const headers = getInstagramHeaders(effectiveSessionId);
   const commentsList = [];
   let minId = '';
   let maxId = '';
@@ -439,10 +768,19 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
         url += `&max_id=${encodeURIComponent(maxId)}`;
       }
 
-      const response = await axios.get(url, { headers, timeout: 15000, maxRedirects: 0, validateStatus: s => s < 500 });
+      const response = await axios.get(url, { headers, timeout: 7000, maxRedirects: 0, validateStatus: s => s < 500 });
+
+      // Detect HTML response (Instagram login wall / checkpoint / redirect)
+      if (typeof response.data === 'string' && (response.data.includes('<html') || response.data.includes('login') || response.data.includes('checkpoint'))) {
+        cookiePool.markCooldown(effectiveSessionId, 30);
+        return res.status(401).json({ 
+          error: 'Instagram Session ID has expired or been challenged by Instagram. Please paste an active Session ID in the "Advanced: Custom Session ID" accordion above.' 
+        });
+      }
 
       if (response.status === 401 || response.status === 403) {
-        return res.status(401).json({ error: 'Session ID is invalid or expired.' });
+        cookiePool.markCooldown(effectiveSessionId, 15);
+        return res.status(401).json({ error: 'Instagram Session ID is invalid or expired. Please provide an active Session ID.' });
       }
 
       if (response.status === 404) {
@@ -450,14 +788,16 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
       }
 
       if (response.status === 429) {
-        return res.status(429).json({ error: 'Instagram rate limit reached. Please wait a few minutes.' });
+        cookiePool.markCooldown(effectiveSessionId, 10);
+        return res.status(429).json({ error: 'Instagram rate limit reached. Please retry in 1-2 minutes or use your own Session ID.' });
       }
 
       const data = response.data;
       if (!data || data.status !== 'ok') {
         if (commentsList.length > 0) break;
-        return res.status(400).json({ error: data?.message || 'Failed to fetch comments.' });
+        return res.status(400).json({ error: data?.message || 'Instagram did not return comments for this post. Please verify post is public and Session ID is active.' });
       }
+
 
       if (data.comment_count) instagramTotalCount = data.comment_count;
 
@@ -555,8 +895,15 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
 app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
   const { postUrl, sessionId } = req.query;
 
-  if (!postUrl || !sessionId) {
-    return res.status(400).json({ error: 'Post URL and Session ID are required.' });
+  if (!postUrl) {
+    return res.status(400).json({ error: 'Instagram Post or Reel URL is required.' });
+  }
+
+  const effectiveSessionId = cookiePool.getNextSessionId(sessionId);
+  if (!effectiveSessionId) {
+    return res.status(400).json({
+      error: 'No active Instagram Session ID available. Please configure backend dummy accounts in server .env (INSTA_COOKIE_1) or provide a custom Session ID in the app.'
+    });
   }
 
   const shortcode = parseShortcode(postUrl);
@@ -573,18 +920,23 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
 
   // Set SSE Headers
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   if (res.flushHeaders) res.flushHeaders();
 
-  const headers = getInstagramHeaders(sessionId);
+  const headers = getInstagramHeaders(effectiveSessionId);
   let minId = '';
   let maxId = '';
   let hasMore = true;
   let pageCount = 0;
   const maxPages = 300;
   let totalCommentsSent = 0;
+
+  // Clean stream closure if user cancels or navigates away
+  req.on('close', () => {
+    hasMore = false;
+  });
 
   try {
     while (hasMore && pageCount < maxPages) {
@@ -596,10 +948,27 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
         url += `&max_id=${encodeURIComponent(maxId)}`;
       }
 
-      const response = await axios.get(url, { headers, timeout: 12000, maxRedirects: 0, validateStatus: s => s < 500 });
+      const response = await axios.get(url, { headers, timeout: 7000, maxRedirects: 0, validateStatus: s => s < 500 });
+
+      // Detect HTML response (Instagram login wall / checkpoint / redirect)
+      if (typeof response.data === 'string' && (response.data.includes('<html') || response.data.includes('login') || response.data.includes('checkpoint'))) {
+        cookiePool.markCooldown(effectiveSessionId, 30);
+        res.write(`data: ${JSON.stringify({ 
+          type: 'error', 
+          error: 'Instagram Session ID has expired or been challenged by Instagram. Please paste an active Session ID in the "Advanced: Custom Session ID" accordion above.' 
+        })}\n\n`);
+        return res.end();
+      }
 
       if (response.status === 401 || response.status === 403) {
-        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Session ID is invalid or expired.' })}\n\n`);
+        cookiePool.markCooldown(effectiveSessionId, 15);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Instagram Session ID is invalid or expired. Please provide an active Session ID in the accordion above.' })}\n\n`);
+        return res.end();
+      }
+
+      if (response.status === 429) {
+        cookiePool.markCooldown(effectiveSessionId, 10);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Instagram rate limit reached. Please wait 1-2 minutes or enter your own Session ID.' })}\n\n`);
         return res.end();
       }
 
@@ -610,8 +979,13 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
 
       const data = response.data;
       if (!data || data.status !== 'ok') {
+        if (totalCommentsSent === 0) {
+          res.write(`data: ${JSON.stringify({ type: 'error', error: data?.message || 'Instagram did not return comments. Please verify URL or update Session ID.' })}\n\n`);
+          return res.end();
+        }
         break;
       }
+
 
       const rawComments = data.comments || [];
       if (rawComments.length === 0) {
@@ -662,6 +1036,7 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
 
       // Send live batch to client
       res.write(`data: ${JSON.stringify({ type: 'batch', comments: pageComments, shortcode, mediaId, totalCommentsSent, instagramTotalCount })}\n\n`);
+      if (typeof res.flush === 'function') res.flush();
 
       minId = data.next_min_id || data.next_max_id || '';
       maxId = data.next_max_id || '';
@@ -673,10 +1048,12 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
     }
 
     res.write(`data: ${JSON.stringify({ type: 'done', totalCommentsSent })}\n\n`);
+    if (typeof res.flush === 'function') res.flush();
     res.end();
 
   } catch (err) {
     res.write(`data: ${JSON.stringify({ type: 'done', warning: err.message, totalCommentsSent })}\n\n`);
+    if (typeof res.flush === 'function') res.flush();
     res.end();
   }
 });
@@ -687,8 +1064,8 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
 app.post('/api/fetch-video-info', heavyApiLimiter, async (req, res) => {
   const { postUrl, sessionId } = req.body;
 
-  if (!postUrl || !sessionId) {
-    return res.status(400).json({ error: 'Post URL and Session ID are required.' });
+  if (!postUrl) {
+    return res.status(400).json({ error: 'Instagram Reel or Video URL is required.' });
   }
 
   const shortcode = parseShortcode(postUrl);
@@ -696,14 +1073,15 @@ app.post('/api/fetch-video-info', heavyApiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Invalid Instagram Video/Reel URL.' });
   }
 
-  let mediaId;
+  let mediaId = '0';
   try {
     mediaId = shortcodeToMediaId(shortcode);
   } catch (err) {
     mediaId = '0';
   }
 
-  const headers = getInstagramHeaders(sessionId);
+  const effectiveSessionId = cookiePool.getNextSessionId(sessionId);
+  const headers = effectiveSessionId ? getInstagramHeaders(effectiveSessionId) : {};
 
   try {
     const item = await fetchInstagramMediaItem(shortcode, mediaId, headers);
@@ -743,8 +1121,8 @@ app.post('/api/fetch-video-info', heavyApiLimiter, async (req, res) => {
 app.post('/api/fetch-song-info', heavyApiLimiter, async (req, res) => {
   const { postUrl, sessionId } = req.body;
 
-  if (!postUrl || !sessionId) {
-    return res.status(400).json({ error: 'Post URL and Session ID are required.' });
+  if (!postUrl) {
+    return res.status(400).json({ error: 'Instagram Reel or Audio URL is required.' });
   }
 
   const shortcode = parseShortcode(postUrl);
@@ -752,14 +1130,15 @@ app.post('/api/fetch-song-info', heavyApiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Invalid Instagram Reel/Audio URL.' });
   }
 
-  let mediaId;
+  let mediaId = '0';
   try {
     mediaId = shortcodeToMediaId(shortcode);
   } catch (err) {
     mediaId = '0';
   }
 
-  const headers = getInstagramHeaders(sessionId);
+  const effectiveSessionId = cookiePool.getNextSessionId(sessionId);
+  const headers = effectiveSessionId ? getInstagramHeaders(effectiveSessionId) : {};
 
   try {
     const item = await fetchInstagramMediaItem(shortcode, mediaId, headers);
@@ -768,6 +1147,7 @@ app.post('/api/fetch-song-info', heavyApiLimiter, async (req, res) => {
     let title = 'Original Audio';
     let artist = item.user?.username || item.owner?.username || 'Instagram Artist';
     let artwork = item.image_versions2?.candidates?.[0]?.url || item.display_url || '';
+    let isVideoFallback = false;
 
     const musicInfo = item.clips_metadata?.music_info?.music_asset_info;
     const soundInfo = item.clips_metadata?.original_sound_info;
@@ -784,10 +1164,13 @@ app.post('/api/fetch-song-info', heavyApiLimiter, async (req, res) => {
       title = soundInfo.original_audio_title || title;
       artist = soundInfo.ig_artist?.username || artist;
     } else {
+      // Fallback: use the video MP4 file itself — mark as video fallback so
+      // client downloads as .mp4 (not fake .mp3 which would be unplayable)
       const videoVersions = item.video_versions || item.video_resources || [];
       if (videoVersions.length > 0) {
         audioUrl = videoVersions[0].url || videoVersions[0].src;
-        title = `Audio from @${artist}`;
+        title = `Video (with Audio) from @${artist}`;
+        isVideoFallback = true;
       }
     }
 
@@ -801,8 +1184,10 @@ app.post('/api/fetch-song-info', heavyApiLimiter, async (req, res) => {
       audioUrl,
       title,
       artist,
-      artwork
+      artwork,
+      isVideoFallback
     });
+
 
   } catch (err) {
     return res.status(400).json({ error: `Failed to fetch audio track: ${err.message}` });
@@ -810,7 +1195,7 @@ app.post('/api/fetch-song-info', heavyApiLimiter, async (req, res) => {
 });
 
 /* ==========================================================================
-   STREAM PROXY ROUTE (SSRF Protected Attachment Downloads)
+   STREAM PROXY ROUTE (SSRF Protected Attachment Downloads + Real MP3 Audio Conversion)
    ========================================================================== */
 app.get('/api/download-stream', heavyApiLimiter, async (req, res) => {
   const { url, filename, type } = req.query;
@@ -822,8 +1207,51 @@ app.get('/api/download-stream', heavyApiLimiter, async (req, res) => {
     return res.status(403).send('Forbidden: Target domain is not an authorized Instagram/Meta CDN server.');
   }
 
-  const cleanFilename = filename ? String(filename).replace(/[^a-zA-Z0-9_.-]/g, '_') : 'instaclipper_media';
-  const mimeType = type === 'audio' ? 'audio/mpeg' : 'video/mp4';
+  // 1. REAL ON-THE-FLY MP3 CONVERSION (For Song / Audio Downloads)
+  if (type === 'audio') {
+    const rawName = filename ? String(filename).replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/\.[a-zA-Z0-9]+$/, '') : 'instaclipper_audio';
+    const cleanFilename = `${rawName}.mp3`;
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', `attachment; filename="${cleanFilename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+
+    try {
+      const ffmpegBin = ffmpegStatic || 'ffmpeg';
+      const ff = spawn(ffmpegBin, [
+        '-loglevel', 'error',
+        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        '-i', url,
+        '-vn',
+        '-acodec', 'libmp3lame',
+        '-b:a', '192k',
+        '-ar', '44100',
+        '-f', 'mp3',
+        'pipe:1'
+      ]);
+
+      req.on('close', () => {
+        try { ff.kill('SIGKILL'); } catch (e) {}
+      });
+
+      ff.stdout.pipe(res);
+
+      ff.on('error', async (err) => {
+        console.error('[FFmpeg Audio Conversion Error]', err.message);
+        if (!res.headersSent) {
+          res.status(500).send(`Failed to extract audio track: ${err.message}`);
+        }
+      });
+
+      return;
+    } catch (ffmpegErr) {
+      console.warn('[FFmpeg Fallback Warning]', ffmpegErr.message);
+    }
+  }
+
+  // 2. VIDEO DOWNLOADS (Direct Stream Proxy with MP4 MIME)
+  const cleanFilename = filename ? String(filename).replace(/[^a-zA-Z0-9_.-]/g, '_') : 'instaclipper_video.mp4';
+  const mimeType = 'video/mp4';
 
   try {
     const streamRes = await axios.get(url, {
@@ -836,12 +1264,21 @@ app.get('/api/download-stream', heavyApiLimiter, async (req, res) => {
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${cleanFilename}"`);
+
+    // Memory leak fix: Destroy stream if client closes connection early
+    req.on('close', () => {
+      if (streamRes.data && typeof streamRes.data.destroy === 'function') {
+        streamRes.data.destroy();
+      }
+    });
+
     streamRes.data.pipe(res);
 
   } catch (err) {
     res.status(500).send(`Failed to stream download: ${err.message}`);
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`====================================================`);

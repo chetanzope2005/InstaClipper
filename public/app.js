@@ -54,6 +54,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const commentsContainer = document.getElementById('comments-container');
   const lazySentinel = document.getElementById('lazy-sentinel');
   const lazyLoader = document.getElementById('lazy-loader');
+  const btnLoadMoreComments = document.getElementById('btn-load-more-comments');
+  const feedEndMessage = document.getElementById('feed-end-message');
 
   // Feature 2: Video Downloader Elements
   const videoForm = document.getElementById('video-form');
@@ -90,9 +92,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let allComments = [];
   let filteredComments = [];
   let renderedIndex = 0;
-  const BATCH_SIZE = 25;
+  const BATCH_SIZE = 12; // Instagram-style progressive batch size (starts with first few comments)
   let observer = null;
   let activeShortcode = 'post';
+
 
   /* ==========================================
      SESSION STORAGE MANAGER (Browser Cookies)
@@ -113,11 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateSessionStatusBadge(isSet) {
     if (isSet) {
-      sessionStatusLabel.textContent = 'Session ID Set';
+      sessionStatusLabel.textContent = 'Session Active (Fast)';
       btnSessionKeyTrigger.style.borderColor = 'rgba(16, 185, 129, 0.4)';
     } else {
-      sessionStatusLabel.textContent = 'Enter Session ID';
-      btnSessionKeyTrigger.style.borderColor = 'rgba(253, 29, 29, 0.4)';
+      sessionStatusLabel.textContent = 'Fastest Mode (Optional)';
+      btnSessionKeyTrigger.style.borderColor = 'rgba(255, 255, 255, 0.15)';
     }
   }
 
@@ -283,16 +286,25 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ==========================================
      FEATURE 1: COMMENT & REPLIES SCRAPER
      ========================================== */
+  let currentEventSource = null;
+
   scraperForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const sessionId = ensureSessionId();
-    if (!sessionId) return;
+    const customSessionInput = document.getElementById('scraper-custom-session');
+    const sessionId = (customSessionInput && customSessionInput.value.trim()) || getSessionId() || '';
 
     const postUrl = scraperUrlInput.value.trim();
     if (!postUrl) return;
 
+    // Terminate previous stream if active
+    if (currentEventSource) {
+      try { currentEventSource.close(); } catch (_) {}
+      currentEventSource = null;
+    }
+
     errorCardScraper.classList.add('hidden');
     resultsScraper.classList.add('hidden');
+    statusCardScraper.classList.add('hidden');
     btnSubmitScraper.disabled = true;
     spinnerScraper.classList.remove('hidden');
 
@@ -316,118 +328,232 @@ document.addEventListener('DOMContentLoaded', () => {
     let streamError = null;
     let instagramTotal = 0;
 
-    // Create Stream Promise with SSE (Server-Sent Events)
-    const apiPromise = new Promise((resolve, reject) => {
-      const sseUrl = `/api/scrape-comments-stream?postUrl=${encodeURIComponent(postUrl)}&sessionId=${encodeURIComponent(sessionId)}`;
-      const evtSource = new EventSource(sseUrl);
-
-      evtSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'error') {
-            evtSource.close();
-            streamError = new Error(data.error || 'Failed to stream comments.');
-            reject(streamError);
-            return;
-          }
-
-          if (data.type === 'batch') {
-            if (data.shortcode) activeShortcode = data.shortcode;
-            if (data.instagramTotalCount) instagramTotal = data.instagramTotalCount;
-            const newComments = data.comments || [];
-            allComments.push(...newComments);
-
-            const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
-            const combined = allComments.length + repliesCount;
-
-            // Update live count badge inside modal if modal is open
-            if (scraperAdCount) {
-              scraperAdCount.textContent = `${combined.toLocaleString()} Comments Loaded So Far`;
-            }
-
-            // Update toolbar badge on results section
-            const liveTotalBadge = document.getElementById('live-total-badge');
-            if (liveTotalBadge) {
-              if (instagramTotal > 0) {
-                liveTotalBadge.textContent = `💬 Extracted ${combined.toLocaleString()} / ${instagramTotal.toLocaleString()} Total Comments`;
-              } else {
-                liveTotalBadge.textContent = `💬 Extracted ${combined.toLocaleString()} Comments (Streaming...)`;
-              }
-            }
-
-            // If results section is already visible, update feed live!
-            if (!resultsScraper.classList.contains('hidden')) {
-              applyFilterAndSort();
-            }
-          }
-
-          if (data.type === 'done') {
-            evtSource.close();
-            streamCompleted = true;
-            const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
-            const combined = allComments.length + repliesCount;
-            const liveTotalBadge = document.getElementById('live-total-badge');
-            if (liveTotalBadge) {
-              liveTotalBadge.textContent = `✅ Extracted ${combined.toLocaleString()} Total Comments`;
-            }
-            if (noticeBanner) {
-              noticeBanner.className = 'comment-notice-banner notice-complete';
-              if (noticeIcon) noticeIcon.textContent = '✅';
-              if (noticeTitle) noticeTitle.textContent = 'Extraction Complete:';
-              if (noticeDesc) noticeDesc.textContent = 'All comments and nested replies have been 100% extracted successfully!';
-            }
-            resolve({ comments: allComments, shortcode: activeShortcode });
-          }
-        } catch (err) {
-          evtSource.close();
-          reject(err);
+    // First batch promise: resolves as soon as batch 1 arrives with comments
+    let resolveFirstBatch, rejectFirstBatch;
+    let isFirstBatchSettled = false;
+    const firstBatchPromise = new Promise((resolve, reject) => {
+      resolveFirstBatch = (val) => {
+        if (!isFirstBatchSettled) {
+          isFirstBatchSettled = true;
+          resolve(val);
         }
       };
-
-      evtSource.onerror = (err) => {
-        evtSource.close();
-        if (allComments.length > 0) {
-          resolve({ comments: allComments, shortcode: activeShortcode });
-        } else {
-          reject(new Error('Connection lost while fetching comments. Please check Session ID.'));
+      rejectFirstBatch = (err) => {
+        if (!isFirstBatchSettled) {
+          isFirstBatchSettled = true;
+          reject(err);
         }
       };
     });
 
+    const sseUrl = `/api/scrape-comments-stream?postUrl=${encodeURIComponent(postUrl)}&sessionId=${encodeURIComponent(sessionId)}`;
+    const evtSource = new EventSource(sseUrl);
+    currentEventSource = evtSource;
+
+    // 12s Safety Timeout: Prevent permanent hanging under dead network connections
+    const timeoutId = setTimeout(() => {
+      if (allComments.length === 0) {
+        evtSource.close();
+        currentEventSource = null;
+        rejectFirstBatch(new Error('Instagram connection timed out. The post may be private, comments disabled, or Session ID expired.'));
+      }
+    }, 12000);
+
+    evtSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'error') {
+          clearTimeout(timeoutId);
+          evtSource.close();
+          currentEventSource = null;
+          streamError = new Error(data.error || 'Failed to stream comments.');
+          rejectFirstBatch(streamError);
+          return;
+        }
+
+        if (data.type === 'batch') {
+          clearTimeout(timeoutId);
+          if (data.shortcode) activeShortcode = data.shortcode;
+          if (data.instagramTotalCount) instagramTotal = data.instagramTotalCount;
+          const newComments = data.comments || [];
+          allComments.push(...newComments);
+
+          const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
+          const combined = allComments.length + repliesCount;
+
+          // Update live count badge inside modal if modal is open
+          if (scraperAdCount) {
+            scraperAdCount.textContent = `${combined.toLocaleString()} Comments Loaded So Far`;
+          }
+
+          // Update toolbar badge on results section
+          const liveTotalBadge = document.getElementById('live-total-badge');
+          if (liveTotalBadge) {
+            if (instagramTotal > 0) {
+              liveTotalBadge.textContent = `💬 Extracted ${combined.toLocaleString()} / ${instagramTotal.toLocaleString()} Total Comments`;
+            } else {
+              liveTotalBadge.textContent = `💬 Extracted ${combined.toLocaleString()} Comments (Streaming...)`;
+            }
+          }
+
+          // Update background live streaming progress bar
+          const liveStreamProgressMsg = document.getElementById('live-stream-progress-msg');
+          if (liveStreamProgressMsg) {
+            liveStreamProgressMsg.textContent = `⚡ Live Streaming in background: ${combined.toLocaleString()} comments loaded... You can browse & search now!`;
+          }
+
+          // Settle firstBatchPromise immediately
+          if (allComments.length > 0) {
+            resolveFirstBatch(allComments);
+          }
+
+          // In-memory update for results if results view is already active
+          if (!resultsScraper.classList.contains('hidden')) {
+            filterAndSortData();
+            updateCountText();
+            if (renderedIndex < filteredComments.length) {
+              if (btnLoadMoreComments) btnLoadMoreComments.classList.remove('hidden');
+              if (feedEndMessage) feedEndMessage.classList.add('hidden');
+            }
+          }
+        }
+
+        if (data.type === 'done') {
+          clearTimeout(timeoutId);
+          evtSource.close();
+          currentEventSource = null;
+          streamCompleted = true;
+
+          const liveStreamProgressBar = document.getElementById('live-stream-progress-bar');
+          if (liveStreamProgressBar) liveStreamProgressBar.classList.add('hidden');
+
+          const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
+          const combined = allComments.length + repliesCount;
+          const liveTotalBadge = document.getElementById('live-total-badge');
+          if (liveTotalBadge) {
+            liveTotalBadge.textContent = `✅ Extracted ${combined.toLocaleString()} Total Comments`;
+          }
+          if (noticeBanner) {
+            noticeBanner.className = 'comment-notice-banner notice-complete';
+            if (noticeIcon) noticeIcon.textContent = '✅';
+            if (noticeTitle) noticeTitle.textContent = 'Extraction Complete:';
+            if (noticeDesc) noticeDesc.textContent = 'All comments and nested replies have been 100% extracted successfully!';
+          }
+
+          if (allComments.length === 0) {
+            rejectFirstBatch(new Error('No comments found on this post. (Comments may be turned off or post is private).'));
+          } else {
+            resolveFirstBatch(allComments);
+          }
+
+          filterAndSortData();
+          updateCountText();
+          if (renderedIndex >= filteredComments.length && filteredComments.length > 0) {
+            if (btnLoadMoreComments) btnLoadMoreComments.classList.add('hidden');
+            if (feedEndMessage) feedEndMessage.classList.remove('hidden');
+          }
+        }
+
+      } catch (err) {
+        clearTimeout(timeoutId);
+        evtSource.close();
+        currentEventSource = null;
+        rejectFirstBatch(err);
+      }
+    };
+
+    evtSource.onerror = (err) => {
+      clearTimeout(timeoutId);
+      evtSource.close();
+      currentEventSource = null;
+      if (allComments.length > 0) {
+        resolveFirstBatch(allComments);
+      } else {
+        rejectFirstBatch(new Error('Instagram did not return comments. Please verify URL is public and your Session ID is valid.'));
+      }
+    };
+
     try {
-      // Run 30-Second Compulsory Video Ad Modal
+      // Run 4-Second Quick Ad & Progress Modal
       startCompulsoryScraperAdTimer();
 
-      // Wait 30 seconds for compulsory ad timer
-      await new Promise(r => setTimeout(r, 30000));
+      // Wait 4 seconds for ad timer
+      await new Promise(r => setTimeout(r, 4000));
 
-      // HIDE MODAL AT EXACTLY 30 SECONDS GUARANTEED!
+      // Hide modal after 4s guaranteed
       if (scraperAdModal) scraperAdModal.classList.add('hidden');
 
+      // If initial comments have not arrived yet at 4s, show smooth loading status and await first batch
       if (allComments.length === 0) {
-        // If stream hasn't received comments yet, wait briefly for first batch
-        await apiPromise;
+        const statusCardTitle = statusCardScraper.querySelector('.status-text h3');
+        const statusCardDesc = statusCardScraper.querySelector('.status-text p');
+        if (statusCardTitle) statusCardTitle.textContent = 'Connecting to Instagram Live Stream...';
+        if (statusCardDesc) statusCardDesc.textContent = 'Opening comment feed the instant initial comments arrive (1-2s)...';
+        statusCardScraper.classList.remove('hidden');
+        statusCardScraper.scrollIntoView({ behavior: 'smooth' });
+
+        // Wait ONLY for first batch (up to 5s safety race) - NEVER wait for all 5,000 comments!
+        await Promise.race([
+          firstBatchPromise,
+          new Promise((_, reject) => setTimeout(() => {
+            reject(new Error('Connecting to Instagram took too long. Please verify the URL or try pasting a Session ID.'));
+          }, 5000))
+        ]);
+
+        statusCardScraper.classList.add('hidden');
       }
 
       if (allComments.length === 0) {
-        throw new Error('No comments found on this post.');
+        throw new Error('No comments found on this post. (Note: Comments may be disabled on this post or the account is private).');
       }
 
-      // SHOW RESULTS IMMEDIATELY AFTER 30s AD
+      // SHOW RESULTS IMMEDIATELY - User gets instant access without waiting for 5,000 comments!
       resultsScraper.classList.remove('hidden');
+
+      // Re-enable form submit button & hide spinner right now so user never sees a stuck button
+      btnSubmitScraper.disabled = false;
+      spinnerScraper.classList.add('hidden');
+
+      // Show background streaming progress bar if more comments are continuing in background
+      const liveStreamProgressBar = document.getElementById('live-stream-progress-bar');
+      const liveStreamProgressMsg = document.getElementById('live-stream-progress-msg');
+      if (liveStreamProgressBar) {
+        if (!streamCompleted) {
+          liveStreamProgressBar.classList.remove('hidden');
+          if (liveStreamProgressMsg) {
+            const repliesCount = allComments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
+            const combined = allComments.length + repliesCount;
+            liveStreamProgressMsg.textContent = `⚡ Live Streaming in background: ${combined.toLocaleString()} comments loaded... You can browse & search now!`;
+          }
+        } else {
+          liveStreamProgressBar.classList.add('hidden');
+        }
+      }
+
       searchInput.value = '';
       sortSelect.value = 'likes';
       applyFilterAndSort();
+      resultsScraper.scrollIntoView({ behavior: 'smooth' });
 
     } catch (err) {
+      if (scraperAdModal) scraperAdModal.classList.add('hidden');
+      statusCardScraper.classList.add('hidden');
       errorMsgScraper.textContent = err.message;
       errorCardScraper.classList.remove('hidden');
+      errorCardScraper.scrollIntoView({ behavior: 'smooth' });
+
+      // Automatically open the custom session accordion if session needs refresh
+      if (err.message.includes('Session ID') || err.message.includes('expired') || err.message.includes('private') || err.message.includes('challenged')) {
+        const customDetails = document.getElementById('scraper-custom-session-details');
+        if (customDetails) customDetails.open = true;
+      }
     } finally {
       btnSubmitScraper.disabled = false;
       spinnerScraper.classList.add('hidden');
     }
   });
+
 
   searchInput.addEventListener('input', () => {
     btnClearSearch.classList.toggle('hidden', !searchInput.value);
@@ -503,7 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  function applyFilterAndSort() {
+  function filterAndSortData() {
     const query = searchInput.value.trim().toLowerCase();
 
     if (!query) {
@@ -529,7 +655,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ALWAYS PIN PINNED COMMENTS AT THE VERY TOP OF THE LIST!
     filteredComments.sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+  }
 
+  function applyFilterAndSort() {
+    filterAndSortData();
     commentsContainer.innerHTML = '';
     renderedIndex = 0;
     renderNextBatch();
@@ -549,11 +678,15 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderNextBatch() {
     if (renderedIndex >= filteredComments.length) {
       lazyLoader.classList.add('hidden');
+      if (btnLoadMoreComments) btnLoadMoreComments.classList.add('hidden');
+      if (feedEndMessage && filteredComments.length > 0) feedEndMessage.classList.remove('hidden');
       updateCountText();
       return;
     }
 
     lazyLoader.classList.remove('hidden');
+    if (btnLoadMoreComments) btnLoadMoreComments.classList.add('hidden');
+
     const query = searchInput.value.trim().toLowerCase();
     const nextChunk = filteredComments.slice(renderedIndex, renderedIndex + BATCH_SIZE);
     const fragment = document.createDocumentFragment();
@@ -562,9 +695,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const card = createCommentCardWrapper(c, query);
       fragment.appendChild(card);
 
-      // Insert Native In-Feed Ad every 20 comments
+      // Insert Native In-Feed Ad every 15 comments
       const currentPos = renderedIndex + idx + 1;
-      if (currentPos % 20 === 0 && currentPos < filteredComments.length) {
+      if (currentPos % 15 === 0 && currentPos < filteredComments.length) {
         const adCard = createInFeedAdCard(currentPos);
         fragment.appendChild(adCard);
       }
@@ -573,12 +706,25 @@ document.addEventListener('DOMContentLoaded', () => {
     commentsContainer.appendChild(fragment);
     renderedIndex += nextChunk.length;
 
-    if (renderedIndex >= filteredComments.length) {
-      lazyLoader.classList.add('hidden');
+    lazyLoader.classList.add('hidden');
+
+    if (renderedIndex < filteredComments.length) {
+      if (btnLoadMoreComments) btnLoadMoreComments.classList.remove('hidden');
+      if (feedEndMessage) feedEndMessage.classList.add('hidden');
+    } else {
+      if (btnLoadMoreComments) btnLoadMoreComments.classList.add('hidden');
+      if (feedEndMessage && filteredComments.length > 0) feedEndMessage.classList.remove('hidden');
     }
 
     updateCountText();
   }
+
+  if (btnLoadMoreComments) {
+    btnLoadMoreComments.addEventListener('click', () => {
+      renderNextBatch();
+    });
+  }
+
 
   function createInFeedAdCard(index) {
     const card = document.createElement('div');
@@ -717,8 +863,36 @@ document.addEventListener('DOMContentLoaded', () => {
     wrapper.appendChild(parentCard);
 
     if (comment.replies && comment.replies.length > 0) {
+      const repliesCount = comment.replies.length;
       const repliesContainer = document.createElement('div');
-      repliesContainer.className = 'replies-container';
+      repliesContainer.className = 'replies-container hidden';
+
+      // Check if search query matches any reply — if so, auto-expand
+      const hasSearchMatchInReply = searchQuery && comment.replies.some(r =>
+        (r.username || '').toLowerCase().includes(searchQuery) ||
+        (r.fullName || '').toLowerCase().includes(searchQuery) ||
+        (r.text || '').toLowerCase().includes(searchQuery)
+      );
+
+      if (hasSearchMatchInReply) {
+        repliesContainer.classList.remove('hidden');
+      }
+
+      // Instagram-style View Replies Toggle Button
+      const toggleRepliesBtn = document.createElement('button');
+      toggleRepliesBtn.type = 'button';
+      toggleRepliesBtn.className = 'btn-toggle-replies';
+      toggleRepliesBtn.innerHTML = `<span class="reply-line"></span><span>${hasSearchMatchInReply ? 'Hide' : 'View'} ${repliesCount} ${repliesCount === 1 ? 'reply' : 'replies'}</span>`;
+
+      toggleRepliesBtn.addEventListener('click', () => {
+        const isHidden = repliesContainer.classList.contains('hidden');
+        repliesContainer.classList.toggle('hidden');
+        if (isHidden) {
+          toggleRepliesBtn.innerHTML = `<span class="reply-line"></span><span>Hide ${repliesCount === 1 ? 'reply' : 'replies'}</span>`;
+        } else {
+          toggleRepliesBtn.innerHTML = `<span class="reply-line"></span><span>View ${repliesCount} ${repliesCount === 1 ? 'reply' : 'replies'}</span>`;
+        }
+      });
 
       comment.replies.forEach(reply => {
         let replyGifHtml = '';
@@ -785,8 +959,10 @@ document.addEventListener('DOMContentLoaded', () => {
         repliesContainer.appendChild(replyCard);
       });
 
+      wrapper.appendChild(toggleRepliesBtn);
       wrapper.appendChild(repliesContainer);
     }
+
 
     return wrapper;
   }
@@ -810,8 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
      ========================================== */
   videoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const sessionId = ensureSessionId();
-    if (!sessionId) return;
+    const sessionId = getSessionId() || '';
 
     const postUrl = videoUrlInput.value.trim();
     if (!postUrl) return;
@@ -835,17 +1010,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const filename = `instaclipper_video_${data.shortcode}.mp4`;
       const streamUrl = `/api/download-stream?url=${encodeURIComponent(data.videoUrl)}&filename=${encodeURIComponent(filename)}&type=video`;
-      
-      videoPlayer.src = streamUrl;
+
+      // Use direct CDN URL for preview player (prevents auto-download & supports seeking)
+      videoPlayer.src = data.videoUrl;
       if (data.thumbnail) videoPlayer.poster = data.thumbnail;
       videoUsername.textContent = `@${data.username}`;
       videoResolution.textContent = `HD ${data.width}x${data.height}`;
       videoCaption.textContent = data.caption || 'No caption available.';
 
+      // Stream URL only for the download button (goes through SSRF-protected proxy)
       btnDownloadMp4.href = streamUrl;
 
       resultsVideo.classList.remove('hidden');
       resultsVideo.scrollIntoView({ behavior: 'smooth' });
+
 
     } catch (err) {
       errorMsgVideo.textContent = err.message;
@@ -861,8 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
      ========================================== */
   songForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const sessionId = ensureSessionId();
-    if (!sessionId) return;
+    const sessionId = getSessionId() || '';
 
     const postUrl = songUrlInput.value.trim();
     if (!postUrl) return;
@@ -884,18 +1061,24 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.error || 'Failed to fetch audio track.');
       }
 
+      // Generate High-Quality MP3 Download Stream
       const filename = `instaclipper_song_${data.shortcode}.mp3`;
       const audioStreamUrl = `/api/download-stream?url=${encodeURIComponent(data.audioUrl)}&filename=${encodeURIComponent(filename)}&type=audio`;
 
-      audioPlayer.src = audioStreamUrl;
+      // Use direct CDN URL for instant audio preview player (prevents auto-download, supports seeking)
+      audioPlayer.src = data.audioUrl;
       songTitle.textContent = data.title || 'Original Audio';
       songArtist.textContent = `@${data.artist}`;
       songArtwork.src = data.artwork || 'https://via.placeholder.com/160?text=Music';
 
+      // Always pure MP3 download button
+      btnDownloadMp3.textContent = '⬇ Download Audio Track (MP3)';
       btnDownloadMp3.href = audioStreamUrl;
 
       resultsSong.classList.remove('hidden');
       resultsSong.scrollIntoView({ behavior: 'smooth' });
+
+
 
     } catch (err) {
       errorMsgSong.textContent = err.message;
@@ -921,12 +1104,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function triggerDownloadWithAd(actionCallback) {
     pendingDownloadAction = actionCallback;
-    let waitSeconds = 5;
-    let autoCloseSeconds = 30;
+    let waitSeconds = 4;
+    let autoCloseSeconds = 4;
     isSkipEnabled = false;
 
     if (adCountdownSec) adCountdownSec.textContent = autoCloseSeconds;
-    if (skipBtnLabel) skipBtnLabel.textContent = `Skip Ad in ${waitSeconds}s...`;
+    if (skipBtnLabel) skipBtnLabel.textContent = `Downloading in ${waitSeconds}s...`;
     if (btnSkipDownloadAd) btnSkipDownloadAd.disabled = true;
     if (btnCloseDownloadAd) btnCloseDownloadAd.classList.add('hidden');
 
@@ -941,11 +1124,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (adCountdownSec) adCountdownSec.textContent = Math.max(0, autoCloseSeconds);
 
       if (waitSeconds > 0) {
-        if (skipBtnLabel) skipBtnLabel.textContent = `Skip Ad in ${waitSeconds}s...`;
+        if (skipBtnLabel) skipBtnLabel.textContent = `Downloading in ${waitSeconds}s...`;
       } else if (!isSkipEnabled) {
         isSkipEnabled = true;
         if (btnSkipDownloadAd) btnSkipDownloadAd.disabled = false;
-        if (skipBtnLabel) skipBtnLabel.textContent = `Skip Ad & Download File Now ⚡`;
+        if (skipBtnLabel) skipBtnLabel.textContent = `Download File Now ⚡`;
         if (btnCloseDownloadAd) btnCloseDownloadAd.classList.remove('hidden');
       }
 
@@ -1009,7 +1192,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   /* ==========================================
-     2. MANDATORY 30-SECOND SCRAPER AD & LIVE COUNTER MODAL
+     2. QUICK 4-SECOND SCRAPER AD & LIVE COUNTER MODAL
      ========================================== */
   const scraperAdModal = document.getElementById('scraper-ad-modal');
   const scraperAdSec = document.getElementById('scraper-ad-sec');
@@ -1021,12 +1204,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!scraperAdModal) return;
 
     let secondsPassed = 0;
-    const totalSeconds = 30;
+    const totalSeconds = 4;
 
     if (scraperAdSec) scraperAdSec.textContent = totalSeconds;
     if (scraperAdProgressFill) scraperAdProgressFill.style.width = '0%';
     if (scraperAdCount) scraperAdCount.textContent = '0 Comments Loaded';
-    if (scraperAdStatusMsg) scraperAdStatusMsg.textContent = 'Fetching comments from Instagram API in background... Please wait 30s.';
+    if (scraperAdStatusMsg) scraperAdStatusMsg.textContent = 'Connecting to Instagram API... Loading results live!';
     scraperAdModal.classList.remove('hidden');
 
     // Trigger Monetag Vignette/Video if available in window
@@ -1052,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ==========================================
-     3. MANDATORY 15-SECOND CSV EXPORT AD MODAL
+     3. QUICK 3-SECOND CSV EXPORT AD MODAL
      ========================================== */
   const csvAdModal = document.getElementById('csv-ad-modal');
   const csvAdSec = document.getElementById('csv-ad-sec');
@@ -1065,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let secondsPassed = 0;
-    const totalSeconds = 15;
+    const totalSeconds = 3;
 
     if (csvAdSec) csvAdSec.textContent = totalSeconds;
     if (csvAdProgressFill) csvAdProgressFill.style.width = '0%';
@@ -1099,4 +1282,41 @@ document.addEventListener('DOMContentLoaded', () => {
   function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
+
+  /* ==========================================================================
+     SMART POLITE POPUP & SOCIAL BAR AD LOADER (Non-intrusive delayed loading)
+     Delays Monetag Vignette and Adsterra Social Bar so users are not annoyed.
+     Longer delay (60s) gives users plenty of time to view results peacefully.
+     ========================================================================== */
+  function initDelayedAds() {
+    let adsLoaded = false;
+
+    function loadAdScripts() {
+      if (adsLoaded) return;
+      adsLoaded = true;
+
+      // 1. Monetag Vignette Interstitial (Delayed injection)
+      try {
+        const mScript = document.createElement('script');
+        mScript.dataset.zone = '11731084';
+        mScript.src = 'https://n6wxm.com/vignette.min.js';
+        document.body.appendChild(mScript);
+      } catch (e) {}
+
+      // 2. Adsterra High-CPM Social Bar (Delayed injection)
+      try {
+        const sScript = document.createElement('script');
+        sScript.type = 'text/javascript';
+        sScript.src = 'https://pl31184962.profitableratecpmnetwork.com/e2/92/ab/e292abe04c26fde9786bf499d72fd52f.js';
+        document.body.appendChild(sScript);
+      } catch (e) {}
+    }
+
+    // Delay: Auto-trigger only after 60 seconds of active browsing
+    setTimeout(loadAdScripts, 60000);
+  }
+
+  initDelayedAds();
 });
+
+
