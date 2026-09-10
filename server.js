@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
+import { randomUUID } from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,7 +38,18 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+const allowedOrigins = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://my-first-app-bv7n.onrender.com'
+]);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error('Origin is not allowed'));
+  }
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0,
@@ -63,6 +75,29 @@ const heavyApiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded for scraping/download API. Please wait 1 minute before making another request.' }
+});
+
+const streamTokens = new Map();
+const STREAM_TOKEN_TTL_MS = 5 * 60 * 1000;
+
+function pruneStreamTokens() {
+  const now = Date.now();
+  for (const [token, entry] of streamTokens) {
+    if (entry.expiresAt <= now) streamTokens.delete(token);
+  }
+}
+
+app.post('/api/stream-token', heavyApiLimiter, (req, res) => {
+  const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+  if (!sessionId) return res.status(400).json({ error: 'Session ID is required.' });
+
+  pruneStreamTokens();
+  const token = randomUUID();
+  streamTokens.set(token, {
+    sessionId,
+    expiresAt: Date.now() + STREAM_TOKEN_TTL_MS
+  });
+  return res.json({ token });
 });
 
 app.use('/api/', generalLimiter);
@@ -893,13 +928,20 @@ app.post('/api/scrape-comments', heavyApiLimiter, async (req, res) => {
  * Streams comment pages live to the client as they arrive in background
  */
 app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
-  const { postUrl, sessionId } = req.query;
+  const { postUrl, token } = req.query;
 
   if (!postUrl) {
     return res.status(400).json({ error: 'Instagram Post or Reel URL is required.' });
   }
 
-  const effectiveSessionId = cookiePool.getNextSessionId(sessionId);
+  pruneStreamTokens();
+  const tokenEntry = streamTokens.get(token);
+  if (!tokenEntry) {
+    return res.status(401).json({ error: 'The comment stream token is missing or expired. Please try again.' });
+  }
+  streamTokens.delete(token);
+
+  const effectiveSessionId = cookiePool.getNextSessionId(tokenEntry.sessionId);
   if (!effectiveSessionId) {
     return res.status(400).json({
       error: 'No active Instagram Session ID available. Please configure backend dummy accounts in server .env (INSTA_COOKIE_1) or provide a custom Session ID in the app.'
@@ -1031,6 +1073,9 @@ app.get('/api/scrape-comments-stream', heavyApiLimiter, async (req, res) => {
         commentObj.replies = Array.from(replyMap.values());
         pageComments.push(commentObj);
       }
+
+      totalCommentsSent += pageComments.length;
+      totalCommentsSent += pageComments.reduce((count, comment) => count + (comment.replies?.length || 0), 0);
 
       let instagramTotalCount = data.comment_count || 0;
 

@@ -354,7 +354,27 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     });
 
-    const sseUrl = `/api/scrape-comments-stream?postUrl=${encodeURIComponent(postUrl)}&sessionId=${encodeURIComponent(sessionId)}`;
+    let streamToken;
+    try {
+      const tokenResponse = await fetch('/api/stream-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      const tokenData = await tokenResponse.json();
+      if (!tokenResponse.ok || !tokenData.token) {
+        throw new Error(tokenData.error || 'Could not start the comment stream.');
+      }
+      streamToken = tokenData.token;
+    } catch (err) {
+      btnSubmitScraper.disabled = false;
+      spinnerScraper.classList.add('hidden');
+      errorCardScraper.classList.remove('hidden');
+      errorMsgScraper.textContent = err.message;
+      return;
+    }
+
+    const sseUrl = `/api/scrape-comments-stream?postUrl=${encodeURIComponent(postUrl)}&token=${encodeURIComponent(streamToken)}`;
     const evtSource = new EventSource(sseUrl);
     currentEventSource = evtSource;
 
