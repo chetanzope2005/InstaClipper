@@ -15,22 +15,25 @@
 <body>
   <script>
     const params = new URLSearchParams(window.location.search);
+    const bannerConfigs = {
+      '1fba62e78b7b1bb355de2179b8e4c0d3': { width: 728, height: 90 },
+      '0791c4736a72d4000a5386d7a93a81b9': { width: 300, height: 250 }
+    };
     const key = params.get('key');
-    const width = Number(params.get('width')) || 728;
-    const height = Number(params.get('height')) || 90;
+    const config = bannerConfigs[key];
 
-    if (key) {
+    if (config) {
       window.atOptions = {
         key,
         format: 'iframe',
-        height,
-        width,
+        height: config.height,
+        width: config.width,
         params: {}
       };
 
       const adScript = document.createElement('script');
       adScript.type = 'text/javascript';
-      adScript.src = `https://www.highrevenueformat.com/${encodeURIComponent(key)}/invoke.js`;
+      adScript.src = `https://www.highrevenueformat.com/${key}/invoke.js`;
       document.body.appendChild(adScript);
     }
   </script>

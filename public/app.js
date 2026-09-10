@@ -165,6 +165,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const target = card.getAttribute('data-target');
       navigateTo(target);
     });
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        card.click();
+      }
+    });
   });
 
   document.querySelectorAll('.drawer-link').forEach(btn => {
@@ -742,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iframe.style.overflow = 'hidden';
     iframe.style.background = 'transparent';
     iframe.setAttribute('title', 'Advertisement');
-    iframe.setAttribute('sandbox', 'allow-scripts allow-top-navigation-by-user-activation');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-top-navigation-by-user-activation');
 
     card.appendChild(iframe);
 

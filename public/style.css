@@ -63,7 +63,7 @@ body {
 
 /* Ambient Background Glows */
 .bg-glow {
-  position: absolute;
+  position: fixed;
   border-radius: 50%;
   filter: blur(140px);
   z-index: 0;
@@ -307,6 +307,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  touch-action: manipulation;
 }
 
 .feature-card:hover {
@@ -387,7 +388,7 @@ body {
   position: fixed;
   top: 0;
   left: 0;
-  width: 290px;
+  width: min(290px, calc(100vw - 24px));
   height: 100vh;
   background: #0f111a;
   border-right: 1px solid var(--border-glass);
@@ -903,6 +904,7 @@ body {
   justify-content: center;
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
   transition: transform 0.3s ease;
+  pointer-events: none;
 }
 
 .sticky-ad-wrapper {
@@ -912,6 +914,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
 }
 
 .close-sticky-btn {
@@ -951,6 +954,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.ad-frame {
+  display: block;
+  max-width: 100%;
+  border: 0;
+}
+
+.ad-slot-sticky .ad-frame {
+  width: min(728px, 100%);
+  height: auto;
+  aspect-ratio: 728 / 90;
+}
+
+.drawer-ad-container .ad-frame {
+  width: min(300px, 100%);
+  height: auto;
+  aspect-ratio: 300 / 250;
 }
 
 .ad-sticky-text {
@@ -1064,6 +1085,9 @@ body {
 }
 
 .ad-video-responsive-slot iframe {
+  width: min(300px, 100%) !important;
+  height: auto !important;
+  aspect-ratio: 300 / 250;
   max-width: 100% !important;
 }
 
@@ -1080,6 +1104,14 @@ body {
   .header-actions { width: 100%; justify-content: space-between; }
   .audio-artwork-container { width: 120px; height: 120px; }
   .sticky-footer-ad { padding: 4px 8px; }
+  .sticky-ad-wrapper { max-width: calc(100vw - 16px); }
+  .sticky-ad-content { min-width: 0; }
+  .close-sticky-btn { right: 0; }
+  .ad-slot-sticky { min-height: 46px; }
+  .ad-slot-sticky .ad-frame { width: 100%; }
+  .home-hero h2 { font-size: 1.8rem; }
+  .hero-stats-row { width: 100%; gap: 12px; padding: 10px 12px; }
+  .stat-label { font-size: 0.68rem; }
 }
 
 /* COMMENT NOTICE BANNER (SEPARATE FROM AD CONTAINERS) */
