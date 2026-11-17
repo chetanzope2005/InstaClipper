@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
   <style>
     html, body {
       margin: 0;
@@ -16,7 +17,7 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const bannerConfigs = {
-      '1fba62e78b7b1bb355de2179b8e4c0d3': { width: 728, height: 90 },
+      '40086c015335e16dde3126035b459f58': { width: 728, height: 90, src: 'https://bicea.org/22/40086c015335e16dde3126035b459f58' },
       '0791c4736a72d4000a5386d7a93a81b9': { width: 300, height: 250 }
     };
     const key = params.get('key');
@@ -33,7 +34,7 @@
 
       const adScript = document.createElement('script');
       adScript.type = 'text/javascript';
-      adScript.src = `https://www.highrevenueformat.com/${key}/invoke.js`;
+      adScript.src = config.src || `https://www.highrevenueformat.com/${key}/invoke.js`;
       document.body.appendChild(adScript);
     }
   </script>

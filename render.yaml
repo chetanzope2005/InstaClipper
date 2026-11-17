@@ -1,12 +1,15 @@
-services:  
-  - type: web  
-    name: instaclipper  
-    runtime: node  
-    plan: free  
-    buildCommand: npm install  
-    startCommand: node server.js  
-    envVars:  
-      - key: NODE_ENV  
-        value: production  
-      - key: INSTA_COOKIE_1  
-        sync: false  
+services:
+  - type: web
+    name: mediaclipper
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: MAX_BODY_SIZE
+        value: 32kb
