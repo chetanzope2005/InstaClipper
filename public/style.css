@@ -1203,3 +1203,53 @@ body {
   .platform-nav-bar { flex-direction: column; align-items: flex-start; gap: 10px; }
   .dual-actions { flex-direction: column; }
 }
+
+/* Premium finish: calmer depth, clearer hierarchy, and responsive touch states. */
+:root {
+  --bg-dark: #080a12;
+  --bg-card: rgba(17, 20, 32, 0.82);
+  --bg-card-hover: rgba(25, 29, 45, 0.94);
+  --border-glass: rgba(226, 232, 255, 0.12);
+  --border-glass-focus: rgba(192, 132, 252, 0.62);
+  --insta-gradient: linear-gradient(125deg, #8757ff 0%, #dc4d9b 55%, #ff9365 100%);
+  --insta-gradient-hover: linear-gradient(125deg, #a27dff 0%, #ec65ad 55%, #ffad79 100%);
+  --shadow-card: 0 22px 70px rgba(0, 0, 0, 0.38);
+}
+
+body {
+  background-image: radial-gradient(ellipse at 50% -20%, rgba(104, 79, 190, .18), transparent 52%),
+    linear-gradient(180deg, #0a0c15 0%, #080a12 52%, #0b0c14 100%);
+  background-attachment: fixed;
+}
+
+.bg-glow { opacity: .13; filter: blur(160px); }
+.app-container { max-width: 1160px; }
+.app-header { padding: 10px 4px 22px; }
+.brand-logo-img { box-shadow: 0 8px 28px rgba(145, 93, 255, .28); }
+.glass-card, .feature-card {
+  border-color: rgba(226, 232, 255, .11);
+  background: linear-gradient(145deg, rgba(23, 26, 41, .92), rgba(13, 15, 24, .88));
+  box-shadow: 0 20px 65px rgba(0, 0, 0, .28), inset 0 1px rgba(255, 255, 255, .035);
+}
+.glass-card:hover, .feature-card:hover {
+  border-color: rgba(197, 164, 255, .32);
+  box-shadow: 0 26px 72px rgba(0, 0, 0, .38), 0 0 34px rgba(129, 91, 230, .09);
+}
+.home-hero { padding-top: 22px; }
+.home-hero h2 { letter-spacing: -.045em; text-wrap: balance; }
+.home-hero > p { max-width: 680px; line-height: 1.8; }
+.hero-badge-pill { background: rgba(142, 113, 255, .1); border-color: rgba(166, 139, 255, .24); }
+.feature-card { min-height: 270px; overflow: hidden; position: relative; }
+.feature-card::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 2px;
+  background: var(--insta-gradient); opacity: .72;
+}
+.feature-icon { filter: drop-shadow(0 8px 16px rgba(180, 111, 255, .2)); }
+.ad-slot { border-style: solid; border-color: rgba(226, 232, 255, .08); background: rgba(255, 255, 255, .018); }
+button, .drawer-link, .feature-card { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, .feature-card:focus-visible {
+  outline: 2px solid #c4a5ff; outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

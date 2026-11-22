@@ -146,6 +146,16 @@ function isYoutubeMediaUrl(targetUrl) {
   }
 }
 
+function isFacebookMediaUrl(targetUrl) {
+  try {
+    const hostname = new URL(targetUrl).hostname.toLowerCase();
+    return hostname === 'facebook.com' || hostname.endsWith('.facebook.com') ||
+      hostname === 'fbcdn.net' || hostname.endsWith('.fbcdn.net');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * FIX 3: Safe Stream Fetcher with Step-by-Step Redirect Validation
  * Prevents open-redirect SSRF into internal networks / cloud metadata
@@ -161,13 +171,19 @@ async function safeFetchStream(initialUrl, maxHops = 5) {
       throw new Error('YouTube downloads are not available yet.');
     }
 
+    const isFacebookSource = isFacebookMediaUrl(currentUrl);
     const response = await axios.get(currentUrl, {
       responseType: 'stream',
       maxRedirects: 0,
-      timeout: 20000,
+      // Facebook CDN responses can take longer to begin on a free Render instance.
+      timeout: isFacebookSource ? 60000 : 20000,
       validateStatus: s => (s >= 200 && s < 400),
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        ...(isFacebookSource ? {
+          'Referer': 'https://www.facebook.com/',
+          'Accept': '*/*'
+        } : {})
       }
     });
 
@@ -390,7 +406,8 @@ app.get('/api/download-stream', heavyApiLimiter, async (req, res) => {
       const ffmpegBin = ffmpegStatic || 'ffmpeg';
       ff = spawn(ffmpegBin, [
         '-loglevel', 'error',
-        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        // The media is already fetched with an HTTP User-Agent by safeFetchStream.
+        // FFmpeg reads it from stdin, so -user_agent is invalid for pipe:0.
         '-protocol_whitelist', 'pipe',
         '-i', 'pipe:0',
         '-vn',

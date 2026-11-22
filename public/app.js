@@ -546,7 +546,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // MP3 Audio Conversion Link with Title
-        const audioSource = data.hdUrl || data.sdUrl || data.videoUrl;
+        // Use the smaller Facebook stream for MP3 extraction to avoid slow HD CDN handshakes.
+        const audioSource = data.sdUrl || data.videoUrl || data.hdUrl;
         const audioName = `${titleBase}.mp3`;
         btnDownloadFbAudio.href = `/api/download-stream?url=${encodeURIComponent(audioSource)}&filename=${encodeURIComponent(audioName)}&type=audio`;
 
