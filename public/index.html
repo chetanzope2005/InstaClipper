@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3.7">
+  <link rel="stylesheet" href="style.css?v=3.8">
 </head>
 
 <body>
@@ -52,11 +52,6 @@
       <button class="drawer-link nav-insta-btn" data-target="view-instagram">
         <span class="nav-icon">📸</span>
         <span>Instagram Tools</span>
-      </button>
-
-      <button class="drawer-link nav-yt-btn youtube-disabled" data-target="view-youtube">
-        <span class="nav-icon">▶️</span>
-        <span>YouTube Downloader</span>
       </button>
 
       <button class="drawer-link nav-fb-btn" data-target="view-facebook">
@@ -171,24 +166,6 @@
             </div>
           </div>
 
-          <!-- YouTube module retained in source and hidden until it is enabled. -->
-          <div class="feature-card glass-card card-youtube youtube-disabled" data-target="view-youtube">
-            <div class="card-status-badge">
-              <span class="pulse-dot-green mini"></span>
-              <span>Online</span>
-            </div>
-            <div class="feature-icon icon-youtube">▶️</div>
-            <h3>YouTube Downloader</h3>
-            <p>Download YouTube Shorts and high-resolution MP4 videos, or extract audio tracks into MP3 files.</p>
-            <div class="card-action">
-              <span>Open YouTube Tools</span>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-                <polyline points="12 5 19 12 12 19"></polyline>
-              </svg>
-            </div>
-          </div>
-
           <!-- Card 3: Facebook -->
           <div class="feature-card glass-card card-facebook" data-target="view-facebook">
             <div class="card-status-badge">
@@ -268,7 +245,7 @@
 
           <div id="error-card-video" class="glass-card error-card hidden">
             <div class="error-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
-            <div class="error-details"><h3>Instagram Video Fetch Failed</h3><p id="error-msg-video">Detail here</p></div>
+            <div class="error-details"><h3>Could not load this video</h3><p id="error-msg-video">Check the link and try again.</p></div>
           </div>
 
           <div id="results-video" class="results-section hidden">
@@ -277,9 +254,11 @@
                 <video id="video-player" controls preload="metadata" poster=""></video>
               </div>
               <div class="media-details-container">
+                <p id="video-preview-error" class="preview-error hidden" role="status"></p>
                 <div class="media-user-info">
                   <span class="user-badge" id="video-username">@username</span>
-                  <span class="meta-tag" id="video-resolution">HD 1080p</span>
+                  <span class="meta-tag" id="video-resolution">Video</span>
+                  <span class="meta-tag hidden" id="video-duration"></span>
                 </div>
                 <p class="media-caption" id="video-caption">Caption preview text here...</p>
                 <div class="media-actions">
@@ -331,7 +310,7 @@
 
           <div id="error-card-song" class="glass-card error-card hidden">
             <div class="error-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
-            <div class="error-details"><h3>Audio Fetch Failed</h3><p id="error-msg-song">Detail here</p></div>
+            <div class="error-details"><h3>Could not load this audio</h3><p id="error-msg-song">Check the link and try again.</p></div>
           </div>
 
           <div id="results-song" class="results-section hidden">
@@ -376,112 +355,7 @@
       </section>
 
       <!-- ===================================================================
-           VIEW 3: DEDICATED YOUTUBE MODULE (Fault-Tolerant)
-           =================================================================== -->
-      <section id="view-youtube" class="view-panel youtube-disabled">
-        
-        <!-- Platform Navigation Bar -->
-        <div class="platform-nav-bar">
-          <button type="button" class="btn-back-hub" data-target="view-home">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-            <span>Back to All Platforms</span>
-          </button>
-          <div class="platform-indicator youtube-theme">
-            <span>▶️ YouTube Module</span>
-          </div>
-        </div>
-
-        <div class="glass-card module-card youtube-border">
-          <div class="card-header">
-            <h2>▶️ YouTube Shorts & Video Downloader</h2>
-            <p>Download YouTube Shorts or standard videos as HD MP4, or extract MP3 audio directly.</p>
-          </div>
-
-          <form id="youtube-form">
-            <div class="input-grid single-col">
-              <div class="input-group">
-                <label for="yt-url">YouTube Video or Shorts Link <span class="required">*</span></label>
-                <div class="input-wrapper">
-                  <svg class="field-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="23 7 16 12 23 17 23 7"></polygon>
-                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-                  </svg>
-                  <input type="text" id="yt-url" placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/... or /shorts/..." required autocomplete="off">
-                  <button type="button" class="btn-paste-input icon-btn" title="Paste URL"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg></button>
-                </div>
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" id="btn-submit-yt" class="btn-primary glow-btn btn-youtube">
-                <span>Fetch YouTube Video</span>
-                <div class="spinner hidden" id="spinner-yt"></div>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <!-- YouTube Error Card (Isolated from other platforms) -->
-        <div id="error-card-yt" class="glass-card error-card hidden">
-          <div class="error-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
-          <div class="error-details">
-            <h3>YouTube Fetch Notice</h3>
-            <p id="error-msg-yt">Detail here</p>
-            <span class="safe-note">🛡️ Note: Instagram and Facebook downloaders remain 100% operational.</span>
-          </div>
-        </div>
-
-        <!-- YouTube Results Display -->
-        <div id="results-yt" class="results-section hidden">
-          <div class="glass-card media-results-card">
-            <div class="media-preview-container yt-preview">
-              <img id="yt-thumbnail" src="" alt="YouTube Video Thumbnail" class="yt-thumb-img">
-              <span id="yt-duration" class="yt-duration-badge">00:00</span>
-            </div>
-            <div class="media-details-container">
-              <div class="media-user-info">
-                <span class="user-badge" id="yt-author">Channel Name</span>
-                <span class="meta-tag" id="yt-quality">HD Video</span>
-              </div>
-              <h3 class="yt-title" id="yt-title">YouTube Video Title</h3>
-              <p class="media-caption" id="yt-caption">Description snippet...</p>
-              
-              <div class="media-actions dual-actions">
-                <a id="btn-download-yt-video" href="#" class="btn-primary glow-btn download-btn btn-youtube">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                  <span>Download HD Video (MP4)</span>
-                </a>
-                <a id="btn-download-yt-audio" href="#" class="btn-secondary download-btn">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M9 18V5l12-2v13"></path>
-                    <circle cx="6" cy="18" r="3"></circle>
-                    <circle cx="18" cy="16" r="3"></circle>
-                  </svg>
-                  <span>Download Audio (MP3)</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Ad Banner for YouTube page -->
-        <div class="ad-unit ad-banner-top" style="margin-top: 24px;">
-          <div class="ad-label">SPONSORED ADVERTISEMENT</div>
-          <div class="ad-slot ad-728x90">
-            <iframe class="ad-frame" title="Advertisement" width="728" height="90" loading="lazy" sandbox="allow-scripts allow-popups" src="ad-frame.html?key=40086c015335e16dde3126035b459f58&amp;width=728&amp;height=90"></iframe>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ===================================================================
-           VIEW 4: DEDICATED FACEBOOK MODULE (Fault-Tolerant)
+           VIEW 3: FACEBOOK VIDEO DOWNLOADER
            =================================================================== -->
       <section id="view-facebook" class="view-panel">
         
@@ -532,9 +406,8 @@
         <div id="error-card-fb" class="glass-card error-card hidden">
           <div class="error-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
           <div class="error-details">
-            <h3>Facebook Fetch Notice</h3>
-            <p id="error-msg-fb">Detail here</p>
-            <span class="safe-note">🛡️ Note: Instagram and Facebook downloaders remain 100% operational.</span>
+            <h3>Could not load this video</h3>
+            <p id="error-msg-fb">Check the link and try again.</p>
           </div>
         </div>
 
@@ -545,11 +418,14 @@
               <video id="fb-player" controls preload="metadata" poster=""></video>
             </div>
             <div class="media-details-container">
+              <p id="fb-preview-error" class="preview-error hidden" role="status"></p>
               <div class="media-user-info">
-                <span class="user-badge" id="fb-username">Facebook Creator</span>
-                <span class="meta-tag" id="fb-resolution">HD 1080p</span>
+                <span class="user-badge" id="fb-username">Facebook video</span>
+                <span class="meta-tag" id="fb-resolution">Video</span>
               </div>
-              <h3 class="yt-title" id="fb-title">Facebook Video Title</h3>
+              <h3 class="video-title" id="fb-title">Video preview</h3>
+              <p class="media-caption" id="fb-caption"></p>
+              <span class="meta-tag hidden" id="fb-duration"></span>
               
               <div class="media-actions dual-actions">
                 <a id="btn-download-fb-hd" href="#" class="btn-primary glow-btn download-btn btn-facebook">
@@ -592,7 +468,7 @@
     <footer class="app-footer">
       <div class="footer-legal-notice">
         <p class="disclaimer-text">
-          <strong>Disclaimer:</strong> MediaClipper is an independent utility and is not affiliated with Instagram, Meta Platforms, YouTube, or Google LLC. Only save content you own or have permission to use, and follow the source platform's rules. Streaming through this server does not grant permission to download or reuse content.
+          <strong>Disclaimer:</strong> MediaClipper is an independent utility and is not affiliated with Instagram or Meta Platforms. Only save content you own or have permission to use, and follow the source platform's rules. Streaming through this server does not grant permission to download or reuse content.
         </p>
       </div>
 
@@ -652,7 +528,7 @@
 
         <div id="legal-tab-fairuse" class="legal-tab-content">
           <h4>Fair Use & Trademark Disclaimer</h4>
-          <p>MediaClipper is an independent utility and is not affiliated with or endorsed by Instagram, Meta Platforms, YouTube, or Google LLC. All trademarks belong to their respective owners.</p>
+          <p>MediaClipper is an independent utility and is not affiliated with or endorsed by Instagram or Meta Platforms. All trademarks belong to their respective owners.</p>
         </div>
       </div>
     </div>
@@ -690,7 +566,13 @@
     </div>
   </div>
 
-  <script src="app.js?v=3.8"></script>
+  <div id="download-error-toast" class="download-error-toast hidden" role="alert" aria-live="assertive">
+    <strong>Download could not start</strong>
+    <p id="download-error-message"></p>
+    <button type="button" id="btn-dismiss-download-error" class="btn-secondary">Close</button>
+  </div>
+
+  <script src="app.js?v=4.0"></script>
   <script data-cfasync="false" src="https://afders.org/1/f559d0a62e98f088a479b9a6c4a729ee"></script>
 </body>
 </html>

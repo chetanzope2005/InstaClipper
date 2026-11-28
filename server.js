@@ -9,7 +9,6 @@ import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 
 import { cookiePool, getInstagramVideo, getInstagramAudio } from './services/instagramService.js';
-import { getYoutubeVideo, getYoutubeAudio } from './services/youtubeService.js';
 import { getFacebookVideo, getFacebookAudio } from './services/facebookService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,8 +17,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '32kb';
-// Keep disabled unless the product has explicit platform authorization for downloads.
-const YOUTUBE_ENABLED = false;
 
 // Enable Reverse Proxy Trust (Required for Render, Vercel, Cloudflare, Nginx)
 app.set('trust proxy', 1);
@@ -93,7 +90,7 @@ app.use('/api/', generalLimiter);
 
 /**
  * FIX 3: SSRF PROTECTION: Domain & IP Whitelist Validator
- * Allows verified CDNs for Instagram, Meta/Facebook, and YouTube/Google.
+ * Allows verified CDNs for Instagram and Meta/Facebook.
  */
 function isAllowedCdnDomain(targetUrl) {
   try {
@@ -123,25 +120,11 @@ function isAllowedCdnDomain(targetUrl) {
       'cdninstagram.com',
       'instagram.com',
       'fbcdn.net',
-      'facebook.com',
-      'googlevideo.com',
-      'youtube.com',
-      'ytimg.com',
-      'youtu.be'
+      'facebook.com'
     ];
 
     return allowedDomains.some(domain => hostname === domain || hostname.endsWith('.' + domain));
   } catch (err) {
-    return false;
-  }
-}
-
-function isYoutubeMediaUrl(targetUrl) {
-  try {
-    const hostname = new URL(targetUrl).hostname.toLowerCase();
-    return ['youtube.com', 'youtu.be', 'ytimg.com', 'googlevideo.com']
-      .some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
-  } catch {
     return false;
   }
 }
@@ -167,10 +150,6 @@ async function safeFetchStream(initialUrl, maxHops = 5) {
     if (!isAllowedCdnDomain(currentUrl)) {
       throw new Error('Media source redirected to an unsupported address.');
     }
-    if (!YOUTUBE_ENABLED && isYoutubeMediaUrl(currentUrl)) {
-      throw new Error('YouTube downloads are not available yet.');
-    }
-
     const isFacebookSource = isFacebookMediaUrl(currentUrl);
     const response = await axios.get(currentUrl, {
       responseType: 'stream',
@@ -249,53 +228,7 @@ app.post('/api/fetch-video-info', heavyApiLimiter, handleInstagramVideo);
 app.post('/api/fetch-song-info', heavyApiLimiter, handleInstagramAudio);
 
 /* ==========================================================================
-   MODULE 2: YOUTUBE API ENDPOINTS (Isolated Fault-Tolerant)
-   ========================================================================== */
-app.use('/api/youtube', (req, res, next) => {
-  if (!YOUTUBE_ENABLED) {
-    return res.status(404).json({ error: 'YouTube downloader is not available yet.' });
-  }
-  next();
-});
-
-app.post('/api/youtube/video', heavyApiLimiter, async (req, res) => {
-  const { videoUrl } = req.body;
-  if (!videoUrl) {
-    return res.status(400).json({ error: 'YouTube video or Shorts URL is required.' });
-  }
-
-  try {
-    const data = await getYoutubeVideo(videoUrl);
-    return res.json({ success: true, ...data });
-  } catch (err) {
-    console.error('[YouTube Video Error]', err.message);
-    return res.status(400).json({
-      error: `YouTube Video Fetch Failed: ${err.message}`,
-      platform: 'youtube'
-    });
-  }
-});
-
-app.post('/api/youtube/song', heavyApiLimiter, async (req, res) => {
-  const { videoUrl } = req.body;
-  if (!videoUrl) {
-    return res.status(400).json({ error: 'YouTube video or Shorts URL is required.' });
-  }
-
-  try {
-    const data = await getYoutubeAudio(videoUrl);
-    return res.json({ success: true, ...data });
-  } catch (err) {
-    console.error('[YouTube Audio Error]', err.message);
-    return res.status(400).json({
-      error: `YouTube Audio Fetch Failed: ${err.message}`,
-      platform: 'youtube'
-    });
-  }
-});
-
-/* ==========================================================================
-   MODULE 3: FACEBOOK API ENDPOINTS (Isolated Fault-Tolerant)
+   MODULE 2: FACEBOOK API ENDPOINTS (Isolated Fault-Tolerant)
    ========================================================================== */
 app.post('/api/facebook/video', heavyApiLimiter, async (req, res) => {
   const { postUrl } = req.body;
@@ -351,10 +284,6 @@ app.get('/api/download-stream', heavyApiLimiter, async (req, res) => {
   const { url, filename, type } = req.query;
 
   if (!url) return sendDownloadError(req, res, 400, 'Missing media URL');
-
-  if (!YOUTUBE_ENABLED && isYoutubeMediaUrl(url)) {
-    return sendDownloadError(req, res, 403, 'YouTube downloads are not available yet.');
-  }
 
   // SSRF Protection: Initial Domain & IP Whitelist Validation
   if (!isAllowedCdnDomain(url)) {
@@ -578,10 +507,6 @@ app.get('/health', (req, res) => {
         service: 'loaded',
         authentication: cookiePool.getPool().length > 0 ? 'configured' : 'public-only'
       },
-      youtube: {
-        service: 'loaded',
-        enabled: YOUTUBE_ENABLED
-      },
       facebook: {
         service: 'loaded',
         upstream: 'not-checked'
@@ -619,7 +544,7 @@ app.listen(PORT, () => {
   console.log(`====================================================`);
   console.log(`🚀 MediaClipper Multi-Platform Suite is running!`);
   console.log(`🌐 Open in browser: http://localhost:${PORT}`);
-  console.log(`✨ Platforms Available: Instagram, Facebook (YouTube disabled)`);
+  console.log(`✨ Platforms Available: Instagram & Facebook`);
   console.log(`🔒 Zero-Storage Mode: ACTIVE (No data stored on disk)`);
   console.log(`🛡️ SSRF Protection & Safe Redirects: ENABLED`);
   console.log(`⚡ FFmpeg Concurrency Cap: Max ${MAX_CONCURRENT_FFMPEG} jobs`);

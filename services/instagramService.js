@@ -432,9 +432,10 @@ export async function getInstagramVideo(postUrl) {
     videoUrl: bestVideo.url || bestVideo.src,
     thumbnail: item.image_versions2?.candidates?.[0]?.url || item.display_url || '',
     caption: item.caption?.text || item.edge_media_to_caption?.edges?.[0]?.node?.text || '',
-    username: item.user?.username || item.owner?.username || 'instagram_user',
-    width: bestVideo.width || 1080,
-    height: bestVideo.height || 1920
+    username: item.user?.username || item.owner?.username || '',
+    width: bestVideo.width || null,
+    height: bestVideo.height || null,
+    durationSeconds: Number(item.video_duration) || null
   };
 }
 

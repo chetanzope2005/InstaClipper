@@ -1,10 +1,60 @@
 /**
  * MEDIACLIPPER SUITE - FRONTEND SPA APPLICATION LOGIC
- * Features: Multi-Platform (Instagram, YouTube, Facebook),
+ * Features: Instagram and Facebook media downloads,
  * Zero-Storage Streaming, Left Slide Drawer, Interstitial Ads, Modals
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  function formatDuration(seconds) {
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total < 0) return '';
+    const wholeSeconds = Math.floor(total);
+    const hours = Math.floor(wholeSeconds / 3600);
+    const minutes = Math.floor((wholeSeconds % 3600) / 60);
+    const remainder = wholeSeconds % 60;
+    return hours
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+      : `${minutes}:${String(remainder).padStart(2, '0')}`;
+  }
+
+  function friendlyErrorMessage(rawMessage) {
+    const message = String(rawMessage || '').toLowerCase();
+    if (/timeout|timed out|etimedout|econnaborted/.test(message)) {
+      return 'The video source took too long to respond. Please try again in a moment. If it keeps happening, check that the post is public and still available.';
+    }
+    if (/rate limit|too many requests|429/.test(message)) {
+      return 'There have been too many requests. Please wait a minute, then try again.';
+    }
+    if (/private|login|log in|checkpoint|not available|removed|could not find public video|unable to fetch video information/.test(message)) {
+      return 'This post could not be accessed. It may be private, removed, or restricted. Try a public video link that opens without signing in.';
+    }
+    if (/invalid .*url|valid .*link|unsupported address|missing media url/.test(message)) {
+      return 'That link does not look like a supported video link. Copy the full link from a public Reel or video post and try again.';
+    }
+    if (/audio|ffmpeg|conversion|mp3/.test(message)) {
+      return 'The audio could not be prepared from this video. Try the video download instead, or use a post that has an audio track.';
+    }
+    if (/failed to fetch|network|econnreset|socket|502|503|504|axios/.test(message)) {
+      return 'A temporary connection problem stopped the request. Check your internet connection and try again shortly.';
+    }
+    return 'We could not load this post. Check the link and try again. The post must be public and contain a video.';
+  }
+
+  const downloadErrorToast = document.getElementById('download-error-toast');
+  const downloadErrorMessage = document.getElementById('download-error-message');
+  const dismissDownloadError = document.getElementById('btn-dismiss-download-error');
+  let downloadErrorTimer = null;
+  function showDownloadError(rawMessage) {
+    if (!downloadErrorToast || !downloadErrorMessage) return;
+    downloadErrorMessage.textContent = friendlyErrorMessage(rawMessage);
+    downloadErrorToast.classList.remove('hidden');
+    clearTimeout(downloadErrorTimer);
+    downloadErrorTimer = setTimeout(() => downloadErrorToast.classList.add('hidden'), 10000);
+  }
+  if (dismissDownloadError) {
+    dismissDownloadError.addEventListener('click', () => downloadErrorToast?.classList.add('hidden'));
+  }
+
   // SPA Panels & Navigation
   const viewPanels = document.querySelectorAll('.view-panel');
   const drawer = document.getElementById('app-drawer');
@@ -214,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('message', (event) => {
     if (event.origin !== window.location.origin || event.source !== downloadFrame.contentWindow) return;
     if (!event.data || event.data.type !== 'download-error') return;
-    window.alert(event.data.message);
+    showDownloadError(event.data.message);
   });
 
   /* ==========================================================================
@@ -262,10 +312,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorMsgVideo = document.getElementById('error-msg-video');
   const resultsVideo = document.getElementById('results-video');
   const videoPlayer = document.getElementById('video-player');
+  const videoPreviewError = document.getElementById('video-preview-error');
   const videoUsername = document.getElementById('video-username');
   const videoResolution = document.getElementById('video-resolution');
+  const videoDuration = document.getElementById('video-duration');
   const videoCaption = document.getElementById('video-caption');
   const btnDownloadMp4 = document.getElementById('btn-download-mp4');
+
+  function attachPreviewFeedback(player, note) {
+    if (!player || !note) return;
+    player.addEventListener('error', () => {
+      note.textContent = 'The source did not allow this video to play in the preview. You can still try downloading it, or use another public video link.';
+      note.classList.remove('hidden');
+    });
+    player.addEventListener('loadedmetadata', () => note.classList.add('hidden'));
+  }
+
+  attachPreviewFeedback(videoPlayer, videoPreviewError);
 
   if (videoForm) {
     videoForm.addEventListener('submit', async (e) => {
@@ -298,8 +361,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         videoPlayer.src = data.videoUrl;
         if (data.thumbnail) videoPlayer.poster = data.thumbnail;
-        videoUsername.textContent = `@${data.username}`;
-        videoResolution.textContent = `HD ${data.width}x${data.height}`;
+        videoUsername.textContent = data.username ? `@${data.username}` : 'Instagram video';
+        videoResolution.textContent = data.width && data.height ? `${data.width}×${data.height}` : 'Video';
+        const formattedVideoDuration = formatDuration(data.durationSeconds);
+        if (formattedVideoDuration) {
+          videoDuration.textContent = `Duration ${formattedVideoDuration}`;
+          videoDuration.classList.remove('hidden');
+        } else {
+          videoDuration.classList.add('hidden');
+        }
         videoCaption.textContent = data.caption || 'No caption available.';
 
         btnDownloadMp4.href = streamUrl;
@@ -308,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsVideo.scrollIntoView({ behavior: 'smooth' });
 
       } catch (err) {
-        errorMsgVideo.textContent = err.message;
+        errorMsgVideo.textContent = friendlyErrorMessage(err.message);
         errorCardVideo.classList.remove('hidden');
       } finally {
         btnSubmitVideo.disabled = false;
@@ -370,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsSong.scrollIntoView({ behavior: 'smooth' });
 
       } catch (err) {
-        errorMsgSong.textContent = err.message;
+        errorMsgSong.textContent = friendlyErrorMessage(err.message);
         errorCardSong.classList.remove('hidden');
       } finally {
         btnSubmitSong.disabled = false;
@@ -383,104 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
   registerDownloadClick(btnDownloadMp3);
 
   /* ==========================================================================
-     MODULE 2: YOUTUBE HANDLERS (Isolated Fault-Tolerant)
-     ========================================================================== */
-  const youtubeForm = document.getElementById('youtube-form');
-  const ytUrlInput = document.getElementById('yt-url');
-  const btnSubmitYt = document.getElementById('btn-submit-yt');
-  const spinnerYt = document.getElementById('spinner-yt');
-  const errorCardYt = document.getElementById('error-card-yt');
-  const errorMsgYt = document.getElementById('error-msg-yt');
-  const resultsYt = document.getElementById('results-yt');
-  const ytThumbnail = document.getElementById('yt-thumbnail');
-  const ytDuration = document.getElementById('yt-duration');
-  const ytAuthor = document.getElementById('yt-author');
-  const ytQuality = document.getElementById('yt-quality');
-  const ytTitle = document.getElementById('yt-title');
-  const ytCaption = document.getElementById('yt-caption');
-  const btnDownloadYtVideo = document.getElementById('btn-download-yt-video');
-  const btnDownloadYtAudio = document.getElementById('btn-download-yt-audio');
-
-  if (youtubeForm) {
-    youtubeForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const videoUrl = ytUrlInput.value.trim();
-      if (!videoUrl) return;
-
-      errorCardYt.classList.add('hidden');
-      resultsYt.classList.add('hidden');
-      btnSubmitYt.disabled = true;
-      spinnerYt.classList.remove('hidden');
-
-      try {
-        const response = await fetch('/api/youtube/video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoUrl })
-        });
-
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-          throw new Error(data.error || 'Failed to fetch YouTube video details.');
-        }
-
-        ytThumbnail.src = data.thumbnail || 'logo.png';
-        ytDuration.textContent = data.duration || 'Video';
-        ytAuthor.textContent = data.username || 'YouTube Creator';
-        ytQuality.textContent = data.quality || 'HD';
-        ytTitle.textContent = data.title || 'YouTube Video';
-        ytCaption.textContent = data.caption || '';
-
-        // Title-based Video Download URL
-        if (data.videoUrl) {
-          const videoTitle = sanitizeTitleForFilename(data.title, `youtube_${data.videoId || 'video'}`);
-          const videoName = `${videoTitle}.mp4`;
-          btnDownloadYtVideo.href = `/api/download-stream?url=${encodeURIComponent(data.videoUrl)}&filename=${encodeURIComponent(videoName)}&type=video`;
-          btnDownloadYtVideo.classList.remove('hidden');
-        } else {
-          btnDownloadYtVideo.classList.add('hidden');
-        }
-
-        // Title-based Audio Stream URL
-        try {
-          const audioRes = await fetch('/api/youtube/song', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoUrl })
-          });
-          const audioData = await audioRes.json();
-          if (audioData.success && audioData.audioUrl) {
-            const rawAudioTitle = audioData.title || data.title || 'YouTube Audio';
-            const audioArtist = audioData.artist || data.username || '';
-            const fullAudioTitle = audioArtist && !rawAudioTitle.includes(audioArtist)
-              ? `${rawAudioTitle} - ${audioArtist}`
-              : rawAudioTitle;
-            const audioName = `${sanitizeTitleForFilename(fullAudioTitle, `youtube_audio_${data.videoId || 'audio'}`)}.mp3`;
-            btnDownloadYtAudio.href = `/api/download-stream?url=${encodeURIComponent(audioData.audioUrl)}&filename=${encodeURIComponent(audioName)}&type=audio`;
-            btnDownloadYtAudio.classList.remove('hidden');
-          }
-        } catch (audioErr) {
-          console.warn('[YouTube Audio Link Error]', audioErr.message);
-        }
-
-        resultsYt.classList.remove('hidden');
-        resultsYt.scrollIntoView({ behavior: 'smooth' });
-
-      } catch (err) {
-        errorMsgYt.textContent = err.message;
-        errorCardYt.classList.remove('hidden');
-      } finally {
-        btnSubmitYt.disabled = false;
-        spinnerYt.classList.add('hidden');
-      }
-    });
-  }
-
-  registerDownloadClick(btnDownloadYtVideo);
-  registerDownloadClick(btnDownloadYtAudio);
-
-  /* ==========================================================================
-     MODULE 3: FACEBOOK HANDLERS (Isolated Fault-Tolerant)
+     MODULE 2: FACEBOOK HANDLERS (Isolated Fault-Tolerant)
      ========================================================================== */
   const facebookForm = document.getElementById('facebook-form');
   const fbUrlInput = document.getElementById('fb-url');
@@ -490,12 +463,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorMsgFb = document.getElementById('error-msg-fb');
   const resultsFb = document.getElementById('results-fb');
   const fbPlayer = document.getElementById('fb-player');
+  const fbPreviewError = document.getElementById('fb-preview-error');
   const fbUsername = document.getElementById('fb-username');
   const fbResolution = document.getElementById('fb-resolution');
   const fbTitle = document.getElementById('fb-title');
+  const fbCaption = document.getElementById('fb-caption');
+  const fbDuration = document.getElementById('fb-duration');
   const btnDownloadFbHd = document.getElementById('btn-download-fb-hd');
   const btnDownloadFbSd = document.getElementById('btn-download-fb-sd');
   const btnDownloadFbAudio = document.getElementById('btn-download-fb-audio');
+
+  attachPreviewFeedback(fbPlayer, fbPreviewError);
 
   if (facebookForm) {
     facebookForm.addEventListener('submit', async (e) => {
@@ -522,9 +500,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         fbPlayer.src = data.hdUrl || data.sdUrl || data.videoUrl;
         if (data.thumbnail) fbPlayer.poster = data.thumbnail;
-        fbUsername.textContent = `@${data.username || 'facebook'}`;
-        fbResolution.textContent = data.quality || 'HD 1080p';
-        fbTitle.textContent = data.title || 'Facebook Video';
+        fbUsername.textContent = data.username || 'Facebook video';
+        fbResolution.textContent = data.quality || 'Video';
+        fbTitle.textContent = data.title || 'Video preview';
+        fbCaption.textContent = data.caption || '';
+        const formattedFbDuration = formatDuration(data.durationSeconds);
+        if (formattedFbDuration) {
+          fbDuration.textContent = `Duration ${formattedFbDuration}`;
+          fbDuration.classList.remove('hidden');
+        } else {
+          fbDuration.classList.add('hidden');
+        }
 
         const titleBase = sanitizeTitleForFilename(data.title, 'facebook_video');
 
@@ -555,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsFb.scrollIntoView({ behavior: 'smooth' });
 
       } catch (err) {
-        errorMsgFb.textContent = err.message;
+        errorMsgFb.textContent = friendlyErrorMessage(err.message);
         errorCardFb.classList.remove('hidden');
       } finally {
         btnSubmitFb.disabled = false;

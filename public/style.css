@@ -930,7 +930,7 @@ body {
 }
 
 /* ==========================================================================
-   MULTI-PLATFORM EXTENSIONS (Instagram, YouTube, Facebook)
+   INSTAGRAM AND FACEBOOK MODULE STYLES
    ========================================================================== */
 
 /* 3-Column Grid on Desktop */
@@ -940,19 +940,10 @@ body {
   gap: 22px;
 }
 
-.youtube-disabled {
-  display: none !important;
-}
-
 /* Platform Card Theme Hover & Borders */
 .card-instagram:hover {
   border-color: rgba(253, 29, 29, 0.45);
   box-shadow: 0 14px 35px rgba(253, 29, 29, 0.22);
-}
-
-.card-youtube:hover {
-  border-color: rgba(255, 51, 51, 0.5);
-  box-shadow: 0 14px 35px rgba(255, 0, 0, 0.25);
 }
 
 .card-facebook:hover {
@@ -964,11 +955,6 @@ body {
 .icon-instagram {
   background: linear-gradient(135deg, rgba(131, 58, 180, 0.25) 0%, rgba(253, 29, 29, 0.25) 100%);
   border: 1px solid rgba(253, 29, 29, 0.3);
-}
-
-.icon-youtube {
-  background: rgba(255, 0, 0, 0.16);
-  border: 1px solid rgba(255, 0, 0, 0.35);
 }
 
 .icon-facebook {
@@ -1044,12 +1030,6 @@ body {
   color: #ff758c;
 }
 
-.platform-indicator.youtube-theme {
-  background: rgba(255, 0, 0, 0.1);
-  border: 1px solid rgba(255, 0, 0, 0.3);
-  color: #ff5252;
-}
-
 .platform-indicator.facebook-theme {
   background: rgba(24, 119, 242, 0.1);
   border: 1px solid rgba(24, 119, 242, 0.3);
@@ -1098,16 +1078,6 @@ body {
 }
 
 /* Platform Button Variants */
-.btn-youtube {
-  background: linear-gradient(135deg, #ff1a1a 0%, #cc0000 100%) !important;
-  box-shadow: 0 4px 20px rgba(255, 0, 0, 0.3) !important;
-}
-
-.btn-youtube:hover {
-  background: linear-gradient(135deg, #ff3333 0%, #e60000 100%) !important;
-  box-shadow: 0 6px 25px rgba(255, 0, 0, 0.45) !important;
-}
-
 .btn-facebook {
   background: linear-gradient(135deg, #1877f2 0%, #0d65d9 100%) !important;
   box-shadow: 0 4px 20px rgba(24, 119, 242, 0.3) !important;
@@ -1118,45 +1088,11 @@ body {
   box-shadow: 0 6px 25px rgba(24, 119, 242, 0.45) !important;
 }
 
-.youtube-border {
-  border-color: rgba(255, 0, 0, 0.2) !important;
-}
-
 .facebook-border {
   border-color: rgba(24, 119, 242, 0.2) !important;
 }
 
-/* YouTube Thumbnail Preview */
-.yt-preview {
-  position: relative;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  max-height: 240px;
-}
-
-.yt-thumb-img {
-  width: 100%;
-  height: 100%;
-  max-height: 240px;
-  object-fit: cover;
-  display: block;
-  border-radius: var(--radius-md);
-}
-
-.yt-duration-badge {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
-  padding: 3px 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 4px;
-  letter-spacing: 0.04em;
-}
-
-.yt-title {
+.video-title {
   font-size: 1.15rem;
   font-weight: 600;
   color: #ffffff;
@@ -1253,3 +1189,31 @@ button:focus-visible, a:focus-visible, .feature-card:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Clear download feedback and preview metadata */
+.media-caption:empty { display: none; }
+.preview-error {
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  color: #fde68a;
+  background: rgba(245, 158, 11, .09);
+  font-size: .86rem;
+}
+.download-error-toast {
+  position: fixed;
+  z-index: 120;
+  top: 18px;
+  left: 50%;
+  width: min(560px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  padding: 18px 20px;
+  border: 1px solid rgba(248, 113, 113, .48);
+  border-radius: var(--radius-lg);
+  color: var(--text-main);
+  background: rgba(26, 20, 27, .97);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .55);
+}
+.download-error-toast strong { display: block; margin-bottom: 6px; color: #fecaca; }
+.download-error-toast p { margin-bottom: 12px; color: #e2d8df; font-size: .9rem; }
+.download-error-toast button { min-height: 36px; padding: 6px 14px; }

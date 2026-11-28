@@ -20,6 +20,21 @@ export function isValidFacebookUrl(inputUrl) {
   }
 }
 
+function decodeHtmlEntities(value = '') {
+  return String(value)
+    .replace(/&#x([\da-f]{1,6});?/gi, (_, code) => toSafeUnicode(parseInt(code, 16)))
+    .replace(/&#(\d{1,7});?/g, (_, code) => toSafeUnicode(Number(code)))
+    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&').replace(/&nbsp;/gi, ' ');
+}
+
+function toSafeUnicode(codePoint) {
+  return Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
+    ? String.fromCodePoint(codePoint)
+    : '\uFFFD';
+}
+
 async function fetchFacebookPage(inputUrl, headers) {
   let currentUrl = inputUrl;
   for (let hop = 0; hop <= 5; hop++) {
@@ -52,7 +67,7 @@ async function scrapeFacebookDirect(targetUrl) {
 
   const res = await fetchFacebookPage(targetUrl, headers);
 
-  const html = String(res.data || '');
+  const html = decodeHtmlEntities(res.data || '');
 
   // Extract HD video URL
   let hdUrl = '';
@@ -86,8 +101,24 @@ async function scrapeFacebookDirect(targetUrl) {
   const titleMatch = html.match(/property="og:title"[^>]*content="([^"]+)"/i) ||
                      html.match(/<title>([^<]+)<\/title>/i);
   if (titleMatch && titleMatch[1]) {
-    title = titleMatch[1].replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&');
+    title = decodeHtmlEntities(titleMatch[1]);
   }
+
+  const captionMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i) ||
+    html.match(/<meta\s+name="description"\s+content="([^"]+)"/i);
+  const caption = captionMatch?.[1] ? decodeHtmlEntities(captionMatch[1]) : '';
+
+  const ownerMatch = html.match(/"(?:owner|video_owner|page)"\s*:\s*\{[^}]{0,1000}?"(?:name|username)"\s*:\s*"([^"\\]+)"/i) ||
+    html.match(/<meta\s+name="author"\s+content="([^"]+)"/i);
+  const creator = ownerMatch?.[2] || ownerMatch?.[1] || '';
+  const username = creator ? decodeHtmlEntities(creator) : '';
+  const durationMatch = html.match(/"playable_duration_in_ms"\s*:\s*(\d+)/i) ||
+    html.match(/"duration_ms"\s*:\s*(\d+)/i);
+  const durationSeconds = durationMatch ? Math.max(0, Math.round(Number(durationMatch[1]) / 1000)) : null;
+  const widthMatch = html.match(/"(?:original_)?width"\s*:\s*(\d+)/i);
+  const heightMatch = html.match(/"(?:original_)?height"\s*:\s*(\d+)/i);
+  const width = widthMatch ? Number(widthMatch[1]) : null;
+  const height = heightMatch ? Number(heightMatch[1]) : null;
 
   const finalVideoUrl = hdUrl || sdUrl;
   if (!finalVideoUrl) {
@@ -99,8 +130,13 @@ async function scrapeFacebookDirect(targetUrl) {
     sd: sdUrl || hdUrl,
     videoUrl: finalVideoUrl,
     title,
+    username,
+    caption,
     thumbnail,
-    quality: hdUrl ? 'HD 1080p' : 'SD'
+    durationSeconds,
+    width,
+    height,
+    quality: width && height ? `${width}×${height}` : (hdUrl ? 'HD available' : 'SD available')
   };
 }
 
@@ -124,10 +160,14 @@ export async function getFacebookVideo(postUrl) {
       hdUrl: directData.hd || null,
       sdUrl: directData.sd || null,
       title: directData.title,
+      caption: directData.caption,
       thumbnail: directData.thumbnail,
-      username: 'Facebook Creator',
+      username: directData.username,
       quality: directData.quality,
-      durationMs: 0
+      durationMs: directData.durationSeconds ? directData.durationSeconds * 1000 : null,
+      durationSeconds: directData.durationSeconds,
+      width: directData.width,
+      height: directData.height
     };
   } catch (err) {
     errors.push(`direct: ${err.message}`);
